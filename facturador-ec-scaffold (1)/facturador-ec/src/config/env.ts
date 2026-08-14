@@ -11,7 +11,7 @@ function required(name: string): string {
 }
 
 export const env = {
-  port: Number(process.env.PORT ?? 3000),
+  port: Number(process.env.PORT ?? 8080),
 
   supabaseUrl: required('SUPABASE_URL'),
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
@@ -24,3 +24,4 @@ export const env = {
   p12Path: process.env.P12_PATH ?? './certificados/firma.p12',
   p12Password: process.env.P12_PASSWORD ?? '',
 };
+
