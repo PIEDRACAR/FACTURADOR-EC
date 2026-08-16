@@ -16,6 +16,12 @@ export const env = {
   supabaseUrl: required('SUPABASE_URL'),
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
 
+  // Llave maestra (32 bytes en hex) para cifrar/descifrar el certificado
+  // .p12 y su contraseña dentro de Supabase. Ver src/crypto/secrets.ts.
+  // Generarla una sola vez con:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  secretsEncryptionKey: required('SECRETS_ENCRYPTION_KEY'),
+
   // Estos dos son solo para las pruebas locales de este scaffold.
   // En el sistema real, el ambiente y el certificado se leen POR EMISOR
   // desde las tablas `emisores` y `certificados` (ver sección 4/12 del

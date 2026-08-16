@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
 import { FacturacionElectronicaEC } from 'facturacion-electronica-ec';
 import type { FacturaData, EmissionResult } from 'facturacion-electronica-ec';
 import { supabase } from '../db/supabase.js';
 import { SupabaseSequenceProvider } from '../sequence/supabaseSequenceProvider.js';
+import { descifrar, descifrarTexto, pgByteaABuffer } from '../crypto/secrets.js';
 
 /**
  * Este servicio arma una instancia de FacturacionElectronicaEC "al vuelo" por
@@ -12,12 +12,13 @@ import { SupabaseSequenceProvider } from '../sequence/supabaseSequenceProvider.j
  * propio certificado .p12. No se puede compartir una sola instancia entre
  * distintos negocios.
  *
- * SEGURIDAD: el .p12 y su contraseña se leen aquí, en el backend, y nunca
- * salen de esta función. La referencia guardada en la tabla `certificados`
- * (columna referencia_almacenamiento) apunta a dónde vive el archivo — en
- * este scaffold, una ruta de disco local; en producción real, normalmente
- * el path/clave dentro de un gestor de secretos (Supabase Vault, AWS
- * Secrets Manager, etc.), nunca el archivo mismo dentro de la tabla.
+ * SEGURIDAD: el .p12 y su contraseña viven CIFRADOS en las columnas
+ * `certificados.p12_cifrado` y `certificados.p12_password_cifrado`
+ * (ver src/crypto/secrets.ts) y se descifran únicamente aquí, en memoria,
+ * en el backend — nunca se exponen al navegador ni quedan en texto plano
+ * en ninguna variable de entorno por cliente. Esto reemplaza el esquema
+ * anterior basado en P12_PASSWORD__<alias>/P12_BASE64__<alias>, que exigía
+ * tocar Railway a mano por cada negocio nuevo registrado.
  */
 async function construirFacturadorParaEmisor(emisorId: string): Promise<FacturacionElectronicaEC> {
   const { data: emisor, error: errorEmisor } = await supabase
@@ -61,50 +62,18 @@ async function construirFacturadorParaEmisor(emisorId: string): Promise<Facturac
     );
   }
 
-  // La contraseña del .p12 NUNCA se guarda en la tabla `certificados` —
-  // solo la referencia de dónde vive el secreto. Aquí se resuelve leyendo
-  // una variable de entorno específica del certificado, por ejemplo
-  // `P12_PASSWORD__<alias>`. Ajustar según el gestor de secretos real que
-  // se termine usando en producción.
-  const passwordEnvVar = `P12_PASSWORD__${certificado.alias.toUpperCase()}`;
-  const p12Password = process.env[passwordEnvVar];
-  if (!p12Password) {
+  if (!certificado.p12_cifrado || !certificado.p12_password_cifrado) {
     throw new Error(
-      `Falta la contraseña del certificado "${certificado.alias}" del emisor ${emisorId} ` +
-        `(se esperaba en la variable de entorno ${passwordEnvVar}).`
+      `El certificado "${certificado.alias}" del emisor ${emisorId} no tiene el archivo .p12 ` +
+        `o la contraseña guardados (columnas p12_cifrado / p12_password_cifrado vacías). ` +
+        `Vuelve a registrarlo desde /registro.`
     );
   }
 
-  // El certificado .p12 se puede resolver de DOS formas, según dónde se
-  // despliegue este backend:
-  //
-  // 1) Variable de entorno en base64 (P12_BASE64__<alias>) — la forma
-  //    recomendada en Render, Railway o cualquier hosting con sistema de
-  //    archivos EFÍMERO (se borra en cada redeploy/reinicio). El valor de
-  //    `certificados.referencia_almacenamiento` en ese caso es solo el
-  //    alias/etiqueta, no una ruta real.
-  // 2) Ruta de archivo en disco (readFileSync) — válida solo si el backend
-  //    corre en un VPS con disco persistente propio, donde tú controlas
-  //    que el archivo siga ahí después de un reinicio.
-  //
-  // Se intenta primero la variable de entorno en base64 porque es la más
-  // segura para hosting efímero (no depende de que alguien suba el archivo
-  // a mano y se te olvide después de un redeploy).
-  const p12Base64EnvVar = `P12_BASE64__${certificado.alias.toUpperCase()}`;
-  const p12Base64 = process.env[p12Base64EnvVar];
-
-  const p12Buffer = p12Base64
-    ? Buffer.from(p12Base64, 'base64')
-    : readFileSync(certificado.referencia_almacenamiento);
-
-  if (!p12Base64) {
-    console.warn(
-      `[facturacion] No se encontró ${p12Base64EnvVar}; leyendo el certificado desde disco ` +
-        `(${certificado.referencia_almacenamiento}). Esto SOLO es seguro si el hosting tiene ` +
-        `disco persistente real — en Render/Railway con plan sin disco persistente, el archivo ` +
-        `desaparecerá en el próximo redeploy o reinicio.`
-    );
-  }
+  // Descifrado con la llave maestra del sistema (SECRETS_ENCRYPTION_KEY) —
+  // ver src/crypto/secrets.ts. Nada de esto sale de esta función.
+  const p12Buffer = descifrar(pgByteaABuffer(certificado.p12_cifrado));
+  const p12Password = descifrarTexto(pgByteaABuffer(certificado.p12_password_cifrado));
 
   return new FacturacionElectronicaEC({
     emisor: {
