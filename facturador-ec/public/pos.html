@@ -46,11 +46,12 @@
     opacity: 0.85;
     margin-top: 2px;
   }
-  header a.enlace-catalogo {
-    color: white; text-decoration: none; font-size: 0.8rem; opacity: 0.9;
+  header a.enlace-catalogo, header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
     border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
-    display: inline-block; margin-top: 8px;
+    display: inline-block; margin-top: 8px; margin-right: 6px;
   }
+  header .nav { margin-top: 4px; }
   .contenedor {
     max-width: 640px;
     margin: 0 auto;
@@ -272,7 +273,11 @@
 <header>
   <h1>Punto de Venta</h1>
   <div class="emisor" id="etiqueta-emisor">Cargando…</div>
-  <a class="enlace-catalogo" id="enlace-catalogo" href="#">Ver catálogo de productos →</a>
+  <div class="nav">
+    <a id="enlace-catalogo" href="#">Catálogo</a>
+    <a id="enlace-proformas" href="#">Proformas</a>
+    <a id="enlace-reportes" href="#">Reportes</a>
+  </div>
 </header>
 
 <div class="contenedor">
@@ -427,6 +432,8 @@ if (!emisorId) {
 } else {
   document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
   document.getElementById('enlace-catalogo').href = '/productos-admin?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-proformas').href = '/proformas?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-reportes').href = '/reportes?emisorId=' + encodeURIComponent(emisorId);
 }
 
 renderPagos();
@@ -692,7 +699,7 @@ document.getElementById('btn-cobrar').addEventListener('click', async () => {
     if (!resp.ok) {
       mostrarModal('error', 'No se pudo completar la venta', datos.error + (datos.detalle ? ' — ' + JSON.stringify(datos.detalle) : ''));
     } else if (datos.estado === 'AUTORIZADO') {
-      mostrarModal('exito', '¡Factura autorizada!', `N.° autorización: ${datos.numeroAutorizacion}\nSecuencial: ${datos.secuencial}\nTotal: ${dinero(datos.importeTotal)}`);
+      mostrarModal('exito', '¡Factura autorizada!', `N.° autorización: ${datos.numeroAutorizacion}\nSecuencial: ${datos.secuencial}\nTotal: ${dinero(datos.importeTotal)}`, datos.comprobanteId);
       carrito = [];
       pagos = [{ formaPagoCodigo: '01', valor: 0 }];
       renderCarrito();
@@ -708,14 +715,18 @@ document.getElementById('btn-cobrar').addEventListener('click', async () => {
   }
 });
 
-function mostrarModal(tipo, titulo, texto) {
+function mostrarModal(tipo, titulo, texto, comprobanteId) {
   const overlay = document.getElementById('overlay');
   const contenido = document.getElementById('modal-contenido');
   contenido.className = 'modal ' + tipo;
+  const botonRide = comprobanteId
+    ? `<a href="/comprobantes/${comprobanteId}/ride" target="_blank" style="display:block; text-decoration:none; margin-top:10px; background:#1e3a8a; color:white; padding:12px; border-radius:10px; font-weight:700;">Ver factura (PDF)</a>`
+    : '';
   contenido.innerHTML = `
     <div class="icono">${tipo === 'exito' ? '✅' : '⚠️'}</div>
     <h3>${titulo}</h3>
     <p style="white-space: pre-line;">${texto}</p>
+    ${botonRide}
     <button id="btn-cerrar-modal">Cerrar</button>
   `;
   overlay.classList.add('visible');

@@ -392,53 +392,39 @@ export async function registrarRutasPos(app: FastifyInstance) {
       return reply.status(500).send({ error: errorCliente?.message ?? 'No se pudo resolver el cliente.' });
     }
 
-    // --- 3) Crear el comprobante en estado 'generado' + su detalle ---
-    // El `secuencial` se deja en NULL a propósito: lo asigna la librería de
-    // forma atómica en el momento de emitir (ver services/facturacion.ts y
-    // sql/migracion_secuencial_nulo.sql) — inventar un número aquí antes de
-    // emitir es lo que causaba el desfase que se corrigió en esta sesión.
-    const { data: comprobante, error: errorComprobante } = await supabase
-      .from('comprobantes')
-      .insert({
-        emisor_id: body.emisorId,
-        punto_emision_id: puntoEmision.id,
-        tipo: 'factura',
-        secuencial: null,
-        cliente_id: cliente.id,
-        subtotal_0: subtotal0,
-        subtotal_15: subtotal15,
-        total_descuento: totalDescuento,
-        total_iva: totalIva,
-        propina,
-        importe_total: importeTotal,
-        estado: 'generado',
-      })
-      .select('id')
-      .single();
+    // --- 3) Crear la venta completa (comprobante + items + pagos) y
+    // descontar inventario, todo en una sola transacción atómica de
+    // Postgres (ver sql/migracion_crear_venta_atomica.sql). El `secuencial`
+    // se deja en NULL a propósito: lo asigna la librería de forma atómica
+    // en el momento de emitir (ver services/facturacion.ts) — inventar un
+    // número aquí antes de emitir es lo que causaba el desfase que se
+    // corrigió en una sesión anterior.
+    const { data: comprobanteId, error: errorVenta } = await supabase.rpc('crear_venta', {
+      p_emisor_id: body.emisorId,
+      p_punto_emision_id: puntoEmision.id,
+      p_cliente_id: cliente.id,
+      p_tipo: 'factura',
+      p_subtotal_0: subtotal0,
+      p_subtotal_15: subtotal15,
+      p_total_descuento: totalDescuento,
+      p_total_iva: totalIva,
+      p_propina: propina,
+      p_importe_total: importeTotal,
+      p_items: itemsParaGuardar,
+      p_pagos: body.pagos.map((p) => ({ forma_pago_codigo: p.formaPagoCodigo, valor: p.valor })),
+    });
 
-    if (errorComprobante || !comprobante) {
-      return reply.status(500).send({ error: errorComprobante?.message ?? 'No se pudo crear el comprobante.' });
+    if (errorVenta || !comprobanteId) {
+      const mensaje = errorVenta?.message ?? '';
+      if (mensaje.includes('stock_insuficiente')) {
+        return reply.status(409).send({
+          error: 'Stock insuficiente al momento de confirmar la venta (alguien más vendió el mismo producto primero).',
+        });
+      }
+      return reply.status(500).send({ error: mensaje || 'No se pudo crear la venta.' });
     }
 
-    const { error: errorItems } = await supabase
-      .from('comprobante_items')
-      .insert(itemsParaGuardar.map((i) => ({ ...i, comprobante_id: comprobante.id })));
-
-    const { error: errorPagos } = await supabase.from('comprobante_formas_pago').insert(
-      body.pagos.map((p) => ({
-        comprobante_id: comprobante.id,
-        forma_pago_codigo: p.formaPagoCodigo,
-        valor: p.valor,
-      }))
-    );
-
-    if (errorItems || errorPagos) {
-      return reply.status(500).send({
-        error: 'El comprobante se creó pero fallaron sus detalles. Revisar manualmente en Supabase.',
-        comprobanteId: comprobante.id,
-        detalle: errorItems?.message ?? errorPagos?.message,
-      });
-    }
+    const comprobante = { id: comprobanteId as string };
 
     // --- 4) Armar el FacturaData y emitir, reusando el motor ya probado ---
     const totalConImpuestos: TotalTax[] = [];

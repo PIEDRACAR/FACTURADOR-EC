@@ -38,10 +38,10 @@
   }
   header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
   header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
-  header a.enlace-pos {
-    color: white; text-decoration: none; font-size: 0.8rem; opacity: 0.9;
+  header a.enlace-pos, header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
     border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
-    display: inline-block; margin-top: 8px;
+    display: inline-block; margin-top: 8px; margin-right: 6px;
   }
 
   .contenedor { max-width: 720px; margin: 0 auto; padding: 16px; }
@@ -115,7 +115,11 @@
 <header>
   <h1>Catálogo de productos</h1>
   <div class="emisor" id="etiqueta-emisor">Cargando…</div>
-  <a class="enlace-pos" id="enlace-pos" href="#">← Ir al punto de venta</a>
+  <div class="nav">
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-proformas" href="#">Proformas</a>
+    <a id="enlace-reportes" href="#">Reportes</a>
+  </div>
 </header>
 
 <div class="contenedor">
@@ -205,6 +209,8 @@ if (!emisorId) {
 } else {
   document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
   document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-proformas').href = '/proformas?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-reportes').href = '/reportes?emisorId=' + encodeURIComponent(emisorId);
 }
 
 let productos = [];

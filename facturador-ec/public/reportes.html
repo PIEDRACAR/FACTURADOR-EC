@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reportes — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 800px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 14px; }
+
+  .filtros { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .filtros > div { flex: 1; min-width: 130px; }
+  .filtros label { font-size: 0.75rem; font-weight: 600; color: var(--gris-texto); display: block; margin-bottom: 4px; }
+  .filtros input[type="date"] { width: 100%; padding: 8px 10px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.88rem; }
+  .filtros button {
+    background: var(--azul); color: white; border: none; padding: 9px 16px; border-radius: 8px;
+    font-weight: 700; font-size: 0.88rem; cursor: pointer;
+  }
+
+  .resumen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .resumen-item { background: var(--gris-fondo); border-radius: 10px; padding: 12px; text-align: center; }
+  .resumen-item .valor { font-size: 1.3rem; font-weight: 800; color: var(--azul-osc); }
+  .resumen-item .valor.utilidad { color: var(--verde); }
+  .resumen-item .etiqueta { font-size: 0.72rem; color: var(--gris-texto); margin-top: 2px; }
+
+  .fila-producto { padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .fila-producto:last-child { border-bottom: none; }
+  .fila-producto .cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .fila-producto .nombre { font-size: 0.9rem; font-weight: 600; }
+  .fila-producto .meta { font-size: 0.76rem; color: var(--gris-texto); margin-top: 2px; }
+  .fila-producto .utilidad { font-weight: 700; color: var(--verde); white-space: nowrap; }
+  .barra-fondo { background: var(--gris-fondo); border-radius: 6px; height: 6px; margin-top: 6px; overflow: hidden; }
+  .barra-relleno { background: var(--verde); height: 100%; border-radius: 6px; }
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 24px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reporte de rentabilidad</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-catalogo" href="#">Catálogo</a>
+    <a id="enlace-proformas" href="#">Proformas</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <div class="tarjeta">
+    <h2>Rango de fechas</h2>
+    <div class="filtros">
+      <div><label>Desde</label><input type="date" id="f-desde"></div>
+      <div><label>Hasta</label><input type="date" id="f-hasta"></div>
+      <div><button id="btn-consultar" type="button">Consultar</button></div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Resumen del período</h2>
+    <div class="resumen-grid">
+      <div class="resumen-item"><div class="valor" id="r-ingresos">$0.00</div><div class="etiqueta">Ingresos</div></div>
+      <div class="resumen-item"><div class="valor" id="r-costo">$0.00</div><div class="etiqueta">Costo</div></div>
+      <div class="resumen-item"><div class="valor utilidad" id="r-utilidad">$0.00</div><div class="etiqueta">Utilidad</div></div>
+      <div class="resumen-item"><div class="valor" id="r-margen">0%</div><div class="etiqueta">Margen</div></div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Rentabilidad por producto</h2>
+    <div id="lista-productos"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId');
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-catalogo').href = '/productos-admin?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-proformas').href = '/proformas?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+function dinero(n) { return '$' + Number(n).toFixed(2); }
+
+// Rango por defecto: últimos 30 días.
+const hoy = new Date();
+const hace30 = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
+document.getElementById('f-hasta').value = hoy.toISOString().slice(0, 10);
+document.getElementById('f-desde').value = hace30.toISOString().slice(0, 10);
+
+async function consultar() {
+  const cont = document.getElementById('lista-productos');
+  if (!emisorId) { cont.innerHTML = '<div class="vacio">Falta emisorId en la URL.</div>'; return; }
+
+  const desde = document.getElementById('f-desde').value;
+  const hasta = document.getElementById('f-hasta').value;
+
+  cont.innerHTML = '<div class="vacio">Consultando…</div>';
+
+  const resp = await fetch(`/reportes/rentabilidad?emisorId=${encodeURIComponent(emisorId)}&desde=${desde}&hasta=${hasta}`);
+  if (!resp.ok) { cont.innerHTML = '<div class="vacio">Error al consultar el reporte.</div>'; return; }
+  const datos = await resp.json();
+
+  document.getElementById('r-ingresos').textContent = dinero(datos.totales.ingresos);
+  document.getElementById('r-costo').textContent = dinero(datos.totales.costo);
+  document.getElementById('r-utilidad').textContent = dinero(datos.totales.utilidad);
+  document.getElementById('r-margen').textContent = datos.totales.margen.toFixed(1) + '%';
+
+  if (datos.productos.length === 0) {
+    cont.innerHTML = '<div class="vacio">No hay ventas autorizadas en este período.</div>';
+    return;
+  }
+
+  const maxUtilidad = Math.max(...datos.productos.map((p) => p.utilidad), 0.01);
+
+  cont.innerHTML = datos.productos.map((p) => `
+    <div class="fila-producto">
+      <div class="cab">
+        <div>
+          <div class="nombre">${p.descripcion}</div>
+          <div class="meta">${p.cantidad} unidades vendidas · Ingresos ${dinero(p.ingresos)} · Costo ${dinero(p.costo)} · Margen ${p.margen}%</div>
+        </div>
+        <div class="utilidad">${dinero(p.utilidad)}</div>
+      </div>
+      <div class="barra-fondo"><div class="barra-relleno" style="width:${Math.max(0, (p.utilidad / maxUtilidad) * 100)}%"></div></div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('btn-consultar').addEventListener('click', consultar);
+consultar();
+</script>
+</body>
+</html>

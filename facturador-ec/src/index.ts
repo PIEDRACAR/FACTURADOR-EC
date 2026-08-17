@@ -6,6 +6,9 @@ import { env } from './config/env.js';
 import { registrarRutasComprobantes } from './routes/comprobantes.js';
 import { registrarRutasEmisores } from './routes/emisores.js';
 import { registrarRutasPos } from './routes/pos.js';
+import { registrarRutasRide } from './routes/ride.js';
+import { registrarRutasProformas } from './routes/proformas.js';
+import { registrarRutasReportes } from './routes/reportes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +30,18 @@ app.get('/productos-admin', async (_request, reply) => {
   reply.type('text/html').send(html);
 });
 
+// Página de proformas (cotizaciones).
+app.get('/proformas', async (_request, reply) => {
+  const html = readFileSync(join(__dirname, '..', 'public', 'proformas.html'), 'utf-8');
+  reply.type('text/html').send(html);
+});
+
+// Página de reportes de rentabilidad.
+app.get('/reportes', async (_request, reply) => {
+  const html = readFileSync(join(__dirname, '..', 'public', 'reportes.html'), 'utf-8');
+  reply.type('text/html').send(html);
+});
+
 // Página del punto de venta (carrito + cobro).
 app.get('/pos', async (_request, reply) => {
   const html = readFileSync(join(__dirname, '..', 'public', 'pos.html'), 'utf-8');
@@ -36,6 +51,9 @@ app.get('/pos', async (_request, reply) => {
 await registrarRutasComprobantes(app);
 await registrarRutasEmisores(app);
 await registrarRutasPos(app);
+await registrarRutasRide(app);
+await registrarRutasProformas(app);
+await registrarRutasReportes(app);
 
 app
   .listen({ port: env.port, host: '0.0.0.0' })

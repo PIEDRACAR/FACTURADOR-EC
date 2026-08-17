@@ -1,29 +1,33 @@
-# facturador-ec — backend de facturación electrónica SRI Ecuador
+# facturador-ec — sistema de facturación electrónica SRI Ecuador
 
-Scaffold real (probado: compila con `tsc`, arranca con `tsx`, responde en `/salud`)
-del backend del facturador electrónico, construido sobre `facturacion-electronica-ec`
-tras comparar esa librería contra `open-factura` (ver sección 14 del documento
-de arquitectura — se descartó `open-factura` por un bug real de manejo de fechas
-y por generar XML contra una ficha técnica desactualizada).
+Backend + interfaces web completas para operar un negocio con facturación
+electrónica ante el SRI: registro de negocios, catálogo de productos, punto
+de venta con lector de código de barras, generación de facturas firmadas y
+autorizadas por el SRI, RIDE en PDF, proformas, y reporte de rentabilidad.
+
+Construido sobre `facturacion-electronica-ec` (elegida tras comparar contra
+`open-factura`: esta última tenía un bug real de manejo de fechas que
+corrompía la clave de acceso, y generaba XML contra una ficha técnica
+desactualizada).
+
+**Probado de punta a punta contra el SRI real** (ambiente de pruebas): una
+factura emitida desde este sistema fue firmada, enviada y AUTORIZADA por el
+SRI — no es solo teoría, el motor funciona.
 
 ## Requisitos
 
-- **Node.js >= 24.18.0** (exigido por `facturacion-electronica-ec`; si tu
-  máquina tiene una versión menor, instala una más nueva con `nvm` antes de
-  correr esto en serio — este scaffold se armó y probó en un entorno con
-  Node 22, que basta para desarrollar/compilar, pero para ejecutar la firma
-  real hace falta la versión que la librería exige).
-- Un proyecto de Supabase con el esquema de `setup-supabase-facturador.sql`
-  y la migración `sql/increment_secuencial.sql` ya aplicados.
-- Un certificado `.p12` real emitido por una entidad certificadora autorizada
-  por el SRI.
+- **Node.js >= 24.18.0** (exigido por `facturacion-electronica-ec`).
+- Un proyecto de Supabase con el esquema y todas las migraciones de
+  `sql/` aplicados (ver "Migraciones SQL" más abajo).
+- Un certificado `.p12` real emitido por una entidad certificadora
+  autorizada por el SRI.
 
 ## Instalación
 
 ```bash
 npm install
 cp .env.example .env
-# completar SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en .env
+# completar SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y SECRETS_ENCRYPTION_KEY en .env
 ```
 
 ## Correr en desarrollo
@@ -36,88 +40,109 @@ npm run dev
 
 ```
 src/
-├── index.ts                          servidor Fastify, punto de entrada
-├── config/env.ts                     variables de entorno tipadas y validadas
-├── db/supabase.ts                    cliente de Supabase (service role, solo backend)
-├── sequence/supabaseSequenceProvider.ts  implementa ISequenceProvider sobre la tabla puntos_emision
-├── services/facturacion.ts           orquesta FacturacionElectronicaEC por emisor
-└── routes/comprobantes.ts            endpoints HTTP (POST emitir, GET consultar)
+├── index.ts                              servidor Fastify — registra todas las rutas y páginas
+├── config/env.ts                         variables de entorno tipadas y validadas
+├── crypto/secrets.ts                     cifrado AES-256-GCM del certificado .p12 y su contraseña
+├── db/
+│   ├── supabase.ts                       cliente de Supabase (service role, solo backend)
+│   └── consultas.ts                      consultas compartidas (emisor, punto de emisión activo)
+├── sequence/supabaseSequenceProvider.ts  ISequenceProvider atómico sobre puntos_emision
+├── services/
+│   ├── facturacion.ts                    orquesta FacturacionElectronicaEC por emisor
+│   └── ride.ts                           genera el RIDE (PDF) de un comprobante
+└── routes/
+    ├── comprobantes.ts                   POST emitir / GET consultar (bajo nivel)
+    ├── emisores.ts                       POST /emisores/registrar (alta de negocio)
+    ├── pos.ts                            GET/POST/PATCH /productos, POST /pos/venta
+    ├── proformas.ts                      cotizaciones + conversión a venta real
+    ├── reportes.ts                       GET /reportes/rentabilidad
+    └── ride.ts                           GET /comprobantes/:id/ride
 
-sql/increment_secuencial.sql          función atómica de incremento de secuenciales (ejecutar en Supabase)
+public/            páginas HTML servidas directamente por Fastify (sin build aparte)
+sql/                todas las migraciones — ver la lista completa más abajo
 ```
 
-## Registro de negocios (autoservicio)
+## Pantallas
 
-Ya no hace falta insertar filas a mano en Supabase ni crear variables de
-entorno por cliente en Railway/Render. Con el backend desplegado, entra a:
+Todas reciben el negocio activo por parámetro de URL (`?emisorId=...`) y
+están enlazadas entre sí con una barra de navegación superior.
 
-```
-https://tu-dominio.app/registro
-```
+| Pantalla | Ruta | Para qué |
+|---|---|---|
+| Registro de negocio | `/registro` | Alta de un negocio nuevo (emisor + punto de emisión + certificado cifrado), sin tocar SQL |
+| Catálogo de productos | `/productos-admin?emisorId=X` | Crear, editar, activar/desactivar productos; código de barras opcional |
+| Punto de venta | `/pos?emisorId=X` | Carrito, escáner de código de barras, cobro, emisión automática |
+| Proformas | `/proformas?emisorId=X` | Cotizaciones — se convierten en venta real con un clic |
+| Reportes | `/reportes?emisorId=X` | Rentabilidad por producto (ingresos, costo, utilidad, margen) en un rango de fechas |
 
-Ese formulario da de alta un negocio nuevo completo (emisor + punto de
-emisión + certificado, cifrado) en un solo paso, llamando a
-`POST /emisores/registrar` por detrás. Es el reemplazo directo de los
-`insert into emisores/puntos_emision/certificados` que se hacían a mano
-durante las pruebas iniciales.
+### Registro de negocio (`/registro`)
 
-**Requisito antes de usarlo:** ejecutar `sql/migracion_certificados_cifrados.sql`
-en el SQL Editor de Supabase (una sola vez), y definir la variable de
-entorno `SECRETS_ENCRYPTION_KEY` en el hosting (ver más abajo).
+Da de alta un negocio nuevo completo en un solo paso, llamando a
+`POST /emisores/registrar`: el certificado `.p12` y su contraseña se cifran
+con AES-256-GCM (`src/crypto/secrets.ts`) usando una única llave maestra
+del sistema (`SECRETS_ENCRYPTION_KEY`) y se guardan cifrados en Supabase —
+ya no se usan variables de entorno por cliente.
 
-## Catálogo de productos
+### Catálogo de productos (`/productos-admin`)
 
-```
-https://tu-dominio.app/productos-admin?emisorId=EL_ID_DEL_EMISOR
-```
+Cada producto guarda código interno, código de barras (opcional, columna
+`codigo_auxiliar`), descripción, precio, costo, tarifa de IVA y stock
+actual/mínimo. Desactivar un producto (`activo=false`) no borra el
+historial: las facturas ya emitidas guardan su propia copia de
+descripción/precio en `comprobante_items`.
 
-Agregar, editar, activar/desactivar productos — reemplaza los `insert into
-productos` que se hacían a mano por SQL. Cada producto guarda código,
-descripción, precio, costo (opcional, para cuando se conecte el descuento
-de inventario), tarifa de IVA, y stock actual/mínimo. Usa `PATCH /productos/:id`
-para editar, y `activo=false` para "eliminar" sin perder el historial de
-ventas que ya lo referencian (los `comprobante_items` guardan su propia
-copia de descripción/precio, así que desactivar un producto no afecta
-facturas ya emitidas).
+### Punto de venta (`/pos`)
 
-## Punto de venta (POS)
+Carrito con buscador de productos, línea libre sin catálogo, cliente
+opcional (Consumidor Final por defecto), pago dividido en varias formas, y
+un **lector de código de barras** (campo dedicado — funciona con lectores
+USB/Bluetooth tipo teclado, sin configuración adicional; busca por código
+interno o código de barras).
 
-```
-https://tu-dominio.app/pos?emisorId=EL_ID_DEL_EMISOR
-```
-
-Carrito completo: buscador de productos (o línea libre sin catálogo),
-cliente opcional (Consumidor Final por defecto), formas de pago —incluye
-pago dividido—, y al confirmar llama a `POST /pos/venta`, que:
+Al confirmar, `POST /pos/venta`:
 
 1. Recalcula precio e IVA de cada línea **en el servidor**, contra la tabla
    `productos` — nunca confía en el precio que mande el navegador.
-2. Valida que la suma de las formas de pago cuadre con el total (±1 centavo).
-3. Crea el `comprobante` + `comprobante_items` + `comprobante_formas_pago`.
-4. Llama a `emitirFactura` (el mismo motor ya probado contra el SRI) y
-   devuelve el resultado (AUTORIZADO / rechazado) al instante.
+2. Valida que la suma de las formas de pago cuadre con el total.
+3. Crea el comprobante completo **y descuenta el inventario**, todo en una
+   sola transacción atómica de Postgres (función `crear_venta` — ver
+   `sql/migracion_crear_venta_atomica.sql`). Si dos ventas simultáneas
+   compiten por el mismo stock, la segunda falla limpiamente en vez de
+   dejar el stock en negativo.
+4. Llama a `emitirFactura` (el motor ya probado contra el SRI real).
+5. Si queda AUTORIZADO, ofrece un botón para ver/descargar el RIDE en PDF.
 
-Requiere que el emisor ya tenga productos cargados desde `/productos-admin`
-(o vía la API de Supabase directamente) y que haya corrido
-`sql/migracion_secuencial_nulo.sql` (ver abajo).
+### Proformas (`/proformas`)
 
-**Nota:** el descuento de inventario (`movimientos_inventario` y resta de
-`productos.stock_actual`) todavía NO está conectado en este endpoint — el
-carrito valida que haya stock suficiente antes de vender, pero no lo
-descuenta al confirmar. Es el siguiente pendiente de la lista.
+Cotizaciones sin efecto tributario ni de inventario. Al convertir una
+proforma vigente en venta (`POST /proformas/:id/convertir`), se honra el
+precio **originalmente cotizado** (no el precio actual del catálogo, que
+pudo haber cambiado desde entonces), y se reusa exactamente el mismo camino
+que `/pos/venta` (inventario + emisión SRI incluidos).
 
-## Lector de código de barras
+### Reportes (`/reportes`)
 
-El POS trae un campo dedicado arriba de "Agregar producto": apunta el
-lector USB/Bluetooth ahí y escanea — la mayoría de lectores funcionan como
-un teclado (escriben el código y presionan Enter solos), así que no
-requieren configuración ni software adicional.
+`GET /reportes/rentabilidad?emisorId=X&desde=&hasta=` agrega por producto,
+sobre ventas ya `autorizado`as: cantidad vendida, ingresos, costo (al costo
+real que tenía el producto en el momento de cada venta, no el costo actual),
+utilidad y margen %. Rango de fechas configurable, por defecto últimos 30 días.
 
-Busca coincidencia exacta contra `productos.codigo_principal` **o**
-`productos.codigo_auxiliar` (columna pensada para el código de barras
-EAN/UPC, editable desde `/productos-admin` → "Código de barras (opcional)").
-Si el código escaneado no está en el catálogo, ofrece agregarlo al vuelo
-como línea libre en vez de bloquear la venta.
+### RIDE en PDF (`GET /comprobantes/:id/ride`)
+
+Genera el PDF de la factura al vuelo a partir de lo ya guardado en
+Supabase (no vuelve a tocar el SRI), con código de barras Code128 de la
+clave de acceso. Si el emisor está en ambiente de pruebas, el PDF lo marca
+visiblemente ("este comprobante no tiene validez tributaria").
+
+## Migraciones SQL
+
+Ejecutar en el SQL Editor de Supabase, en este orden, cada una una sola vez:
+
+1. `setup-supabase-facturador.sql` — esquema completo (todas las tablas)
+2. `sql/increment_secuencial.sql` — función atómica de secuenciales
+3. `sql/migracion_certificados_cifrados.sql` — columnas cifradas del certificado
+4. `sql/migracion_secuencial_nulo.sql` — permite `comprobantes.secuencial` nulo hasta emitir
+5. `sql/migracion_crear_venta_atomica.sql` — función `crear_venta` (comprobante + inventario en una transacción)
 
 ## Desplegar en Render / Railway
 
@@ -127,67 +152,39 @@ como línea libre en vez de bloquear la venta.
    - **Build command:** `npm install && npm run build`
    - **Start command:** `npm start`
    - **Health check path:** `/salud`
-4. Variables de entorno a configurar:
+4. Variables de entorno:
    - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-   - `SECRETS_ENCRYPTION_KEY` — llave maestra única para todo el sistema,
-     usada para cifrar el certificado .p12 y la contraseña de CADA emisor
-     dentro de Supabase (ver `src/crypto/secrets.ts`). Se genera **una sola
-     vez** con:
+   - `SECRETS_ENCRYPTION_KEY` — llave maestra única para cifrar certificados.
+     Generarla **una sola vez** con:
      ```
      node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
      ```
-     Guárdala en un lugar seguro aparte — si se pierde, todos los
-     certificados guardados quedan ilegibles y hay que volver a subirlos
-     desde `/registro`.
-   - `PORT` — la mayoría de hostings la inyectan automáticamente.
-5. Ejecutar en Supabase, si no lo has hecho ya:
-   - `sql/migracion_certificados_cifrados.sql`
-   - `sql/migracion_secuencial_nulo.sql` — deja `comprobantes.secuencial`
-     como opcional al crear la fila, porque el número real lo asigna la
-     librería en el momento de emitir (no antes). Sin esta migración,
-     `/pos/venta` fallará al crear el comprobante.
+     Guárdala aparte en un lugar seguro — si se pierde, los certificados
+     guardados quedan ilegibles y hay que volver a subirlos desde `/registro`.
+   - `PORT` — la mayoría de hostings la inyecta automáticamente.
+5. Ejecutar todas las migraciones de la sección anterior en Supabase.
 6. **Plan gratuito:** el servicio puede "dormirse" tras un rato sin
    tráfico y tardar unos segundos en despertar en la siguiente petición.
-   Vale la pena evaluar un plan pago si eso se vuelve un problema real.
 
-Nota sobre las variables `P12_BASE64__<alias>` / `P12_PASSWORD__<alias>`
-de versiones anteriores de este scaffold: **ya no se usan.** El certificado
-y su contraseña ahora se guardan cifrados en la tabla `certificados`
-(columnas `p12_cifrado` y `p12_password_cifrado`), cargados desde
-`/registro`. Si tienes un emisor de una prueba anterior que solo tenía
-esas variables de entorno, tendrás que volver a registrarlo desde
-`/registro` para que quede con el certificado cifrado en base de datos.
+## Seguridad — certificado y contraseña
 
+El `.p12` y su contraseña se cifran con AES-256-GCM antes de guardarse en
+Supabase (columnas `certificados.p12_cifrado` y `p12_password_cifrado`),
+usando la llave maestra `SECRETS_ENCRYPTION_KEY`. Nunca se guardan en texto
+plano ni en variables de entorno por cliente.
 
+## Pendientes conocidos (para seguir mejorando, no bloquean el uso normal)
 
-Este scaffold se generó y se probó de forma automatizada solo hasta donde fue
-posible sin un certificado real ni acceso a internet hacia `sri.gob.ec`
-(ambas cosas fuera del alcance del entorno donde se armó). Antes de usar esto
-en producción, falta —de tu lado, en tu propia máquina— cuando menos:
-
-1. Aplicar `setup-supabase-facturador.sql` y luego `sql/increment_secuencial.sql`
-   en un proyecto de Supabase real.
-2. Insertar manualmente una fila de prueba en `emisores`, `puntos_emision` y
-   `certificados` (con tu `.p12` real en disco, referenciado desde
-   `certificados.referencia_almacenamiento`, y su contraseña en la variable
-   de entorno `P12_PASSWORD__<ALIAS>`).
-3. Insertar una fila en `comprobantes` con estado `'generado'`.
-4. Llamar `POST /comprobantes/factura/emitir` con ese `comprobanteId` y los
-   datos de la factura — con `emisor.ambiente = '1'` (pruebas), para que
-   vaya contra el ambiente de pruebas del SRI, nunca producción en esta
-   primera prueba.
-5. Confirmar que el estado devuelto sea `AUTORIZADO`.
-
-## Pendientes conocidos de este scaffold (no resueltos a propósito, quedan para cuando se conecte con el POS real)
-
-- ~~El manejo de la contraseña del `.p12`~~ — **resuelto**: ahora se guarda
-  cifrada en Supabase (`certificados.p12_password_cifrado`), no en
-  variables de entorno por cliente. Ver `src/crypto/secrets.ts`.
-- Falta el endpoint para crear el comprobante en estado `'generado'` a partir
-  del carrito del POS — **resuelto**: `POST /pos/venta` (ver arriba), con
-  pantalla en `/pos`.
-- Falta el descuento de inventario (`movimientos_inventario`) al confirmar
-  una venta autorizada — todavía no está conectado en este scaffold.
-- Falta manejo explícito del reintento cuando el SRI responde código 70
-  ("en procesamiento") más allá de lo que la librería ya reintenta
-  internamente (`maxError70Retries`).
+- Sin sistema de usuarios/login todavía: cualquiera con el link
+  `?emisorId=X` puede operar el POS de ese negocio. Para un solo negocio
+  operado por su dueño esto es razonable; para varios cajeros con
+  permisos distintos, hace falta un sistema de autenticación (no
+  construido en este scaffold).
+- El manejo de reintentos cuando el SRI responde código 70 ("en
+  procesamiento") depende del reintento interno de la librería
+  (`maxError70Retries`) — no hay una cola/reintento propio a más largo
+  plazo si el SRI está caído por un rato prolongado.
+- `caja_turnos` / `caja_movimientos` (apertura y cierre de caja por turno)
+  están en el esquema de la base de datos pero no tienen pantalla ni
+  endpoints todavía — depende del sistema de usuarios mencionado arriba,
+  ya que un turno de caja se asocia a `auth.users`.

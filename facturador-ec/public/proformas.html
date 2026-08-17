@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proformas — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626; --rojo-fondo: #fee2e2;
+    --ambar: #d97706; --ambar-fondo: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 14px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gris-texto); margin-top: 12px; margin-bottom: 4px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="date"], select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.95rem;
+  }
+  .fila-doble { display: flex; gap: 12px; }
+  .fila-doble > div { flex: 1; }
+  .buscador { position: relative; }
+  .resultados {
+    position: absolute; left: 0; right: 0; background: white; border: 1px solid var(--gris-borde);
+    border-radius: 10px; margin-top: 4px; max-height: 240px; overflow-y: auto;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1); z-index: 20; display: none;
+  }
+  .resultados.visible { display: block; }
+  .resultado-item { padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+  .resultado-item:hover { background: var(--azul-suave); }
+  .btn-libre {
+    margin-top: 10px; width: 100%; background: none; border: 1px dashed var(--gris-borde); color: var(--azul);
+    padding: 10px; border-radius: 10px; font-size: 0.85rem; cursor: pointer; font-weight: 600;
+  }
+  .linea-item {
+    display: flex; justify-content: space-between; align-items: center; padding: 10px 0;
+    border-bottom: 1px solid var(--gris-fondo); gap: 10px;
+  }
+  .linea-item:last-child { border-bottom: none; }
+  .linea-item .nombre { font-size: 0.9rem; font-weight: 600; }
+  .linea-item .meta { font-size: 0.76rem; color: var(--gris-texto); }
+  .linea-item .quitar { color: var(--rojo); font-size: 0.76rem; cursor: pointer; }
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 20px 0; }
+  button.principal {
+    width: 100%; background: var(--azul); color: white; border: none; padding: 13px;
+    border-radius: 8px; font-size: 0.95rem; font-weight: 700; margin-top: 16px; cursor: pointer;
+  }
+  button.principal:disabled { background: #93c5fd; cursor: not-allowed; }
+  .mensaje { border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: 0.85rem; display: none; }
+  .mensaje.exito { background: var(--verde-fondo); color: #166534; display: block; }
+  .mensaje.error { background: var(--rojo-fondo); color: #991b1b; display: block; }
+
+  .fila-proforma { padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .fila-proforma:last-child { border-bottom: none; }
+  .fila-proforma .cab { display: flex; justify-content: space-between; align-items: center; }
+  .fila-proforma .numero { font-weight: 700; font-size: 0.92rem; }
+  .fila-proforma .cliente { font-size: 0.8rem; color: var(--gris-texto); }
+  .fila-proforma .total { font-weight: 700; }
+  .etiqueta-estado {
+    display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; margin-top: 4px;
+  }
+  .etiqueta-estado.vigente { background: var(--verde-fondo); color: #166534; }
+  .etiqueta-estado.vencida { background: var(--ambar-fondo); color: #92400e; }
+  .etiqueta-estado.convertida { background: var(--azul-suave); color: var(--azul-osc); }
+  .etiqueta-estado.anulada { background: var(--rojo-fondo); color: #991b1b; }
+  .fila-proforma .acciones { margin-top: 6px; }
+  .fila-proforma button.convertir {
+    background: var(--verde); color: white; border: none; padding: 6px 12px; border-radius: 20px;
+    font-size: 0.76rem; font-weight: 600; cursor: pointer;
+  }
+  .toggle-form-nuevo {
+    width: 100%; background: var(--azul-suave); color: var(--azul-osc); border: 1px dashed var(--azul);
+    padding: 12px; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-bottom: 4px;
+  }
+  #form-proforma { display: none; }
+  #form-proforma.visible { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Proformas</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-catalogo" href="#">Catálogo</a>
+    <a id="enlace-reportes" href="#">Reportes</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <button class="toggle-form-nuevo" id="btn-nueva" type="button">+ Nueva proforma</button>
+
+  <div class="tarjeta" id="form-proforma">
+    <h2>Nueva proforma</h2>
+
+    <div class="buscador">
+      <label>Agregar producto</label>
+      <input type="text" id="buscador-input" placeholder="Buscar por nombre o código…" autocomplete="off">
+      <div class="resultados" id="resultados"></div>
+    </div>
+    <button class="btn-libre" id="btn-mostrar-libre" type="button">+ Ítem libre (sin catálogo)</button>
+
+    <div id="form-libre" style="display:none; margin-top: 10px;">
+      <label>Descripción</label>
+      <input type="text" id="libre-descripcion">
+      <div class="fila-doble">
+        <div><label>Precio unitario</label><input type="text" id="libre-precio" inputmode="decimal"></div>
+        <div><label>Cantidad</label><input type="text" id="libre-cantidad" inputmode="decimal" value="1"></div>
+      </div>
+      <button type="button" id="btn-agregar-libre" class="btn-libre" style="border-style: solid;">Agregar</button>
+    </div>
+
+    <div id="lista-items" style="margin-top: 14px;">
+      <div class="vacio">Sin ítems todavía.</div>
+    </div>
+
+    <label>Cliente — identificación</label>
+    <div class="fila-doble">
+      <div>
+        <select id="cliente-tipo">
+          <option value="05">Cédula</option>
+          <option value="04">RUC</option>
+          <option value="06">Pasaporte</option>
+        </select>
+      </div>
+      <div><input type="text" id="cliente-identificacion" placeholder="Número de documento"></div>
+    </div>
+    <label>Cliente — nombre</label>
+    <input type="text" id="cliente-razon-social" placeholder="Nombre completo o razón social">
+
+    <label>Válida hasta</label>
+    <input type="date" id="fecha-validez">
+
+    <button class="principal" id="btn-guardar-proforma">Guardar proforma</button>
+    <div class="mensaje" id="mensaje-form"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Proformas registradas</h2>
+    <div id="lista-proformas"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId');
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-catalogo').href = '/productos-admin?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-reportes').href = '/reportes?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+function dinero(n) { return '$' + Number(n).toFixed(2); }
+
+let productosCache = null;
+async function cargarProductos() {
+  if (productosCache !== null) return productosCache;
+  const resp = await fetch('/productos?emisorId=' + encodeURIComponent(emisorId));
+  productosCache = resp.ok ? await resp.json() : [];
+  return productosCache;
+}
+
+let itemsProforma = [];
+
+document.getElementById('btn-nueva').addEventListener('click', () => {
+  document.getElementById('form-proforma').classList.add('visible');
+  document.getElementById('form-proforma').scrollIntoView({ behavior: 'smooth' });
+});
+
+document.getElementById('buscador-input').addEventListener('input', async (e) => {
+  const texto = e.target.value.trim().toLowerCase();
+  const caja = document.getElementById('resultados');
+  if (!texto) { caja.classList.remove('visible'); return; }
+  const productos = await cargarProductos();
+  const filtrados = productos.filter((p) => p.descripcion.toLowerCase().includes(texto)).slice(0, 10);
+  caja.innerHTML = filtrados.map((p) =>
+    `<div class="resultado-item" data-id="${p.id}"><span>${p.descripcion}</span><span>${dinero(p.precio_venta)}</span></div>`
+  ).join('') || '<div class="resultado-item">Sin resultados</div>';
+  caja.classList.add('visible');
+  caja.querySelectorAll('[data-id]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const p = productos.find((x) => x.id === el.dataset.id);
+      itemsProforma.push({ productoId: p.id, descripcion: p.descripcion, precioUnitario: Number(p.precio_venta), cantidad: 1 });
+      renderItems();
+      document.getElementById('buscador-input').value = '';
+      caja.classList.remove('visible');
+    });
+  });
+});
+
+document.getElementById('btn-mostrar-libre').addEventListener('click', () => {
+  document.getElementById('form-libre').style.display = 'block';
+});
+document.getElementById('btn-agregar-libre').addEventListener('click', () => {
+  const descripcion = document.getElementById('libre-descripcion').value.trim();
+  const precio = parseFloat(document.getElementById('libre-precio').value);
+  const cantidad = parseFloat(document.getElementById('libre-cantidad').value) || 1;
+  if (!descripcion || isNaN(precio)) { alert('Completa descripción y precio.'); return; }
+  itemsProforma.push({ descripcionLibre: descripcion, precioUnitarioLibre: precio, descripcion, precioUnitario: precio, cantidad });
+  renderItems();
+  document.getElementById('libre-descripcion').value = '';
+  document.getElementById('libre-precio').value = '';
+  document.getElementById('form-libre').style.display = 'none';
+});
+
+function renderItems() {
+  const cont = document.getElementById('lista-items');
+  if (itemsProforma.length === 0) {
+    cont.innerHTML = '<div class="vacio">Sin ítems todavía.</div>';
+    return;
+  }
+  cont.innerHTML = itemsProforma.map((it, idx) => `
+    <div class="linea-item">
+      <div>
+        <div class="nombre">${it.descripcion}</div>
+        <div class="meta">${it.cantidad} x ${dinero(it.precioUnitario)}</div>
+      </div>
+      <div class="quitar" data-idx="${idx}">Quitar</div>
+    </div>
+  `).join('');
+  cont.querySelectorAll('[data-idx]').forEach((el) => {
+    el.addEventListener('click', () => { itemsProforma.splice(Number(el.dataset.idx), 1); renderItems(); });
+  });
+}
+
+document.getElementById('btn-guardar-proforma').addEventListener('click', async () => {
+  const mensaje = document.getElementById('mensaje-form');
+  mensaje.className = 'mensaje';
+  const boton = document.getElementById('btn-guardar-proforma');
+
+  const identificacion = document.getElementById('cliente-identificacion').value.trim();
+  const razonSocial = document.getElementById('cliente-razon-social').value.trim();
+  const fechaValidez = document.getElementById('fecha-validez').value;
+
+  if (itemsProforma.length === 0) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Agrega al menos un ítem.'; return; }
+  if (!fechaValidez) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Indica hasta cuándo es válida.'; return; }
+
+  const cuerpo = {
+    emisorId,
+    cliente: identificacion && razonSocial ? {
+      tipoIdentificacion: document.getElementById('cliente-tipo').value,
+      identificacion, razonSocial,
+    } : undefined,
+    items: itemsProforma.map((it) => it.productoId
+      ? { productoId: it.productoId, cantidad: it.cantidad }
+      : { descripcionLibre: it.descripcionLibre, precioUnitarioLibre: it.precioUnitarioLibre, cantidad: it.cantidad }
+    ),
+    fechaValidez,
+  };
+
+  boton.disabled = true; boton.textContent = 'Guardando…';
+  try {
+    const resp = await fetch('/proformas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = `Proforma ${datos.numeroProforma} creada — total ${dinero(datos.total)}`;
+    itemsProforma = [];
+    renderItems();
+    document.getElementById('cliente-identificacion').value = '';
+    document.getElementById('cliente-razon-social').value = '';
+    await cargarListaProformas();
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Guardar proforma';
+  }
+});
+
+function estadoVisual(p) {
+  if (p.estado === 'vigente' && new Date(p.fecha_validez) < new Date(new Date().toDateString())) return 'vencida';
+  return p.estado;
+}
+
+async function cargarListaProformas() {
+  const cont = document.getElementById('lista-proformas');
+  if (!emisorId) { cont.innerHTML = '<div class="vacio">Falta emisorId en la URL.</div>'; return; }
+  const resp = await fetch('/proformas/listado?emisorId=' + encodeURIComponent(emisorId));
+  const lista = resp.ok ? await resp.json() : [];
+
+  if (lista.length === 0) {
+    cont.innerHTML = '<div class="vacio">Todavía no hay proformas.</div>';
+    return;
+  }
+
+  cont.innerHTML = lista.map((p) => {
+    const est = estadoVisual(p);
+    const puedeConvertir = est === 'vigente';
+    return `
+      <div class="fila-proforma">
+        <div class="cab">
+          <div>
+            <div class="numero">${p.numero_proforma}</div>
+            <div class="cliente">${p.clientes ? p.clientes.razon_social : 'Sin cliente'} · Válida hasta ${p.fecha_validez}</div>
+          </div>
+          <div class="total">${dinero(p.total)}</div>
+        </div>
+        <span class="etiqueta-estado ${est}">${est.toUpperCase()}</span>
+        ${puedeConvertir ? `<div class="acciones"><button class="convertir" data-id="${p.id}">Convertir en venta</button></div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  cont.querySelectorAll('.convertir').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Convertir esta proforma en una venta real y emitirla ante el SRI?')) return;
+      btn.disabled = true;
+      btn.textContent = 'Procesando…';
+      try {
+        const resp = await fetch('/proformas/' + btn.dataset.id + '/convertir', { method: 'POST' });
+        const datos = await resp.json();
+        if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+        if (datos.estado === 'AUTORIZADO') {
+          alert(`¡Factura autorizada! N.° ${datos.numeroAutorizacion}`);
+          window.open('/comprobantes/' + datos.comprobanteId + '/ride', '_blank');
+        } else {
+          alert('Estado: ' + datos.estado + ' — comprobante: ' + datos.comprobanteId);
+        }
+        await cargarListaProformas();
+      } catch (err) {
+        alert('Error: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Convertir en venta';
+      }
+    });
+  });
+}
+
+cargarListaProformas();
+</script>
+</body>
+</html>
