@@ -71,80 +71,125 @@ export async function registrarRutasEmisores(app: FastifyInstance) {
     const puntoEmision = body.puntoEmision ?? '001';
     const direccionEstablecimiento = body.direccionEstablecimiento ?? body.direccionMatriz;
 
-    // 1) Emisor
-    const { data: emisor, error: errorEmisor } = await supabase
-      .from('emisores')
-      .insert({
-        ruc: body.ruc,
-        razon_social: body.razonSocial,
-        direccion_matriz: body.direccionMatriz,
-        obligado_contabilidad: body.obligadoContabilidad,
-        ambiente: body.ambiente,
-      })
-      .select('id')
-      .single();
+    // Si el RUC ya existe, esto es una actualización (por ejemplo, renovar
+    // un certificado vencido) en vez de un registro nuevo — el RUC es
+    // único a nivel de toda la tabla, así que reintentar un `insert` con un
+    // RUC existente siempre fallaría. Se reutiliza el emisor existente en
+    // vez de bloquear al usuario sin darle forma de actualizar su
+    // certificado.
+    const { data: emisorExistente } = await supabase.from('emisores').select('id').eq('ruc', body.ruc).maybeSingle();
 
-    if (errorEmisor || !emisor) {
-      request.log.error(errorEmisor);
-      // Caso más probable: el RUC ya está registrado (columna unique).
-      return reply.status(409).send({
-        error: 'No se pudo registrar el emisor. Es posible que este RUC ya esté registrado.',
-        detalle: errorEmisor?.message,
-      });
+    let emisorId: string;
+    let esActualizacion = false;
+
+    if (emisorExistente) {
+      esActualizacion = true;
+      emisorId = emisorExistente.id;
+
+      const { error: errorActualizarEmisor } = await supabase
+        .from('emisores')
+        .update({
+          razon_social: body.razonSocial,
+          direccion_matriz: body.direccionMatriz,
+          obligado_contabilidad: body.obligadoContabilidad,
+          ambiente: body.ambiente,
+        })
+        .eq('id', emisorId);
+
+      if (errorActualizarEmisor) {
+        request.log.error(errorActualizarEmisor);
+        return reply.status(500).send({ error: 'No se pudo actualizar el emisor existente.', detalle: errorActualizarEmisor.message });
+      }
+    } else {
+      const { data: emisorNuevo, error: errorEmisor } = await supabase
+        .from('emisores')
+        .insert({
+          ruc: body.ruc,
+          razon_social: body.razonSocial,
+          direccion_matriz: body.direccionMatriz,
+          obligado_contabilidad: body.obligadoContabilidad,
+          ambiente: body.ambiente,
+        })
+        .select('id')
+        .single();
+
+      if (errorEmisor || !emisorNuevo) {
+        request.log.error(errorEmisor);
+        return reply.status(500).send({ error: 'No se pudo registrar el emisor.', detalle: errorEmisor?.message });
+      }
+      emisorId = emisorNuevo.id;
     }
 
-    // 2) Punto de emisión
-    const { data: puntoEmisionRow, error: errorPunto } = await supabase
+    // 2) Punto de emisión — reutiliza el activo si ya existe uno (caso de
+    // actualización), o crea uno nuevo.
+    let puntoEmisionId: string;
+    const { data: puntoExistente } = await supabase
       .from('puntos_emision')
-      .insert({
-        emisor_id: emisor.id,
-        establecimiento,
-        punto_emision: puntoEmision,
-        direccion: direccionEstablecimiento,
-      })
       .select('id')
-      .single();
+      .eq('emisor_id', emisorId)
+      .eq('activo', true)
+      .limit(1)
+      .maybeSingle();
 
-    if (errorPunto || !puntoEmisionRow) {
-      request.log.error(errorPunto);
-      return reply.status(500).send({
-        error: 'El emisor se creó pero falló el punto de emisión. Revisa manualmente en Supabase.',
-        emisorId: emisor.id,
-        detalle: errorPunto?.message,
-      });
+    if (puntoExistente) {
+      puntoEmisionId = puntoExistente.id;
+    } else {
+      const { data: puntoEmisionRow, error: errorPunto } = await supabase
+        .from('puntos_emision')
+        .insert({ emisor_id: emisorId, establecimiento, punto_emision: puntoEmision, direccion: direccionEstablecimiento })
+        .select('id')
+        .single();
+
+      if (errorPunto || !puntoEmisionRow) {
+        request.log.error(errorPunto);
+        return reply.status(500).send({
+          error: 'El emisor se creó/actualizó pero falló el punto de emisión. Revisa manualmente en Supabase.',
+          emisorId,
+          detalle: errorPunto?.message,
+        });
+      }
+      puntoEmisionId = puntoEmisionRow.id;
     }
 
     // 3) Certificado, cifrado antes de guardarse — nunca en texto plano.
+    // `upsert` con onConflict por (emisor_id, alias) actualiza el
+    // certificado si ya existía uno con el alias PRINCIPAL (renovación),
+    // o lo crea si es la primera vez.
     const p12Cifrado = bufferAPgBytea(cifrar(p12Buffer));
     const passwordCifrada = bufferAPgBytea(cifrarTexto(body.p12Password));
 
     const { data: certificado, error: errorCert } = await supabase
       .from('certificados')
-      .insert({
-        emisor_id: emisor.id,
-        alias: 'PRINCIPAL',
-        referencia_almacenamiento: 'db:cifrado',
-        fecha_expiracion: body.fechaExpiracionCertificado,
-        p12_cifrado: p12Cifrado,
-        p12_password_cifrado: passwordCifrada,
-      })
+      .upsert(
+        {
+          emisor_id: emisorId,
+          alias: 'PRINCIPAL',
+          referencia_almacenamiento: 'db:cifrado',
+          fecha_expiracion: body.fechaExpiracionCertificado,
+          p12_cifrado: p12Cifrado,
+          p12_password_cifrado: passwordCifrada,
+        },
+        { onConflict: 'emisor_id,alias' }
+      )
       .select('id')
       .single();
 
     if (errorCert || !certificado) {
       request.log.error(errorCert);
       return reply.status(500).send({
-        error: 'El emisor y el punto de emisión se crearon pero falló el certificado. Revisa manualmente en Supabase.',
-        emisorId: emisor.id,
+        error: 'El emisor y el punto de emisión quedaron listos pero falló el certificado. Revisa manualmente en Supabase.',
+        emisorId,
         detalle: errorCert?.message,
       });
     }
 
     return reply.status(201).send({
-      emisorId: emisor.id,
-      puntoEmisionId: puntoEmisionRow.id,
+      emisorId,
+      puntoEmisionId,
       certificadoId: certificado.id,
-      mensaje: 'Emisor registrado correctamente. Ya puede emitir comprobantes.',
+      mensaje: esActualizacion
+        ? 'Este RUC ya estaba registrado — se actualizaron sus datos y su certificado.'
+        : 'Emisor registrado correctamente. Ya puede emitir comprobantes.',
     });
   });
 }

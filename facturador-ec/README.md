@@ -83,6 +83,10 @@ con AES-256-GCM (`src/crypto/secrets.ts`) usando una única llave maestra
 del sistema (`SECRETS_ENCRYPTION_KEY`) y se guardan cifrados en Supabase —
 ya no se usan variables de entorno por cliente.
 
+Si el RUC ya está registrado, **no falla**: actualiza los datos del emisor
+existente y reemplaza su certificado (útil para renovar un certificado
+vencido, o corregir un registro hecho antes de que existiera el cifrado).
+
 ### Catálogo de productos (`/productos-admin`)
 
 Cada producto guarda código interno, código de barras (opcional, columna
@@ -143,6 +147,7 @@ Ejecutar en el SQL Editor de Supabase, en este orden, cada una una sola vez:
 3. `sql/migracion_certificados_cifrados.sql` — columnas cifradas del certificado
 4. `sql/migracion_secuencial_nulo.sql` — permite `comprobantes.secuencial` nulo hasta emitir
 5. `sql/migracion_crear_venta_atomica.sql` — función `crear_venta` (comprobante + inventario en una transacción)
+6. `sql/migracion_certificado_unico_por_alias.sql` — permite actualizar (no solo crear) el certificado de un emisor ya registrado
 
 ## Desplegar en Render / Railway
 
