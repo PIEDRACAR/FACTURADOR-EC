@@ -103,21 +103,36 @@ export async function emitirFactura({
   try {
     resultado = await fe.emitirFactura(facturaData);
   } catch (err) {
+    let mensaje = err instanceof Error ? err.message : String(err);
+    // Bug conocido de la librería: cuando la validación XSD encuentra
+    // varios errores de forma, arma el mensaje con `array.join()` sobre
+    // objetos (no strings), y el resultado queda como "[object Object]"
+    // repetido — se pierde el detalle real. No hay forma de recuperar el
+    // detalle exacto desde aquí, pero al menos se da una pista útil en vez
+    // de un mensaje ilegible: los casos más comunes son campos que exceden
+    // el largo máximo que exige el SRI (p. ej. codigoPrincipal ≤ 25
+    // caracteres) o un tipo de dato con formato inválido.
+    if (mensaje.includes('[object Object]')) {
+      mensaje +=
+        ' — Es un error de formato del XML (la librería no da más detalle). Causas típicas: algún código de producto ' +
+        'supera los 25 caracteres, o un campo numérico/fecha no tiene el formato que exige el SRI.';
+    }
+
     await supabase
       .from('comprobantes')
       .update({
         estado: 'rechazado',
-        motivo_error: err instanceof Error ? err.message : String(err),
+        motivo_error: mensaje,
       })
       .eq('id', comprobanteId);
 
     await supabase.from('log_firmas').insert({
       comprobante_id: comprobanteId,
       resultado: 'error',
-      mensaje: err instanceof Error ? err.message : String(err),
+      mensaje,
     });
 
-    throw err;
+    throw err instanceof Error && mensaje !== err.message ? new Error(mensaje, { cause: err }) : err;
   }
 
   const estadoDb = mapearEstado(resultado.estado);

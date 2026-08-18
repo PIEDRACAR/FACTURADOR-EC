@@ -216,13 +216,13 @@ export async function registrarRutasPos(app: FastifyInstance) {
 
     const productosPorId = new Map<
       string,
-      { descripcion: string; precio_venta: number; tarifa_iva: string; costo_promedio: number; stock_actual: number }
+      { codigo_principal: string; descripcion: string; precio_venta: number; tarifa_iva: string; costo_promedio: number; stock_actual: number }
     >();
 
     if (idsProductos.length > 0) {
       const { data: productos, error: errorProductos } = await supabase
         .from('productos')
-        .select('id, descripcion, precio_venta, tarifa_iva, costo_promedio, stock_actual')
+        .select('id, codigo_principal, descripcion, precio_venta, tarifa_iva, costo_promedio, stock_actual')
         .eq('emisor_id', body.emisorId)
         .in('id', idsProductos);
 
@@ -266,6 +266,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
 
       const descuento = redondear(item.descuento ?? 0);
       let descripcion: string;
+      let codigoParaFactura: string;
       let precioUnitario: number;
       let tarifaIva: string;
       let costoUnitario: number;
@@ -277,6 +278,9 @@ export async function registrarRutasPos(app: FastifyInstance) {
           sinStock.push(`${producto.descripcion} (disponible: ${producto.stock_actual}, pedido: ${item.cantidad})`);
         }
         descripcion = producto.descripcion;
+        // El SRI exige codigoPrincipal de máximo 25 caracteres — nunca el
+        // id interno (UUID, 36 caracteres) del producto.
+        codigoParaFactura = producto.codigo_principal.slice(0, 25);
         precioUnitario = Number(producto.precio_venta);
         tarifaIva = producto.tarifa_iva;
         costoUnitario = Number(producto.costo_promedio);
@@ -288,6 +292,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
           });
         }
         descripcion = item.descripcionLibre;
+        codigoParaFactura = 'VARIOS';
         precioUnitario = item.precioUnitarioLibre;
         tarifaIva = item.tarifaIvaLibre ?? '15';
         costoUnitario = 0;
@@ -316,7 +321,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
       });
 
       detallesFactura.push({
-        codigoPrincipal: productoId ?? 'VARIOS',
+        codigoPrincipal: codigoParaFactura,
         descripcion,
         cantidad: item.cantidad,
         precioUnitario,

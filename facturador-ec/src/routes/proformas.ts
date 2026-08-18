@@ -224,9 +224,13 @@ export async function registrarRutasProformas(app: FastifyInstance) {
       .filter((id): id is string => !!id);
 
     const tarifasPorProducto = new Map<string, string>();
+    const codigosPorProducto = new Map<string, string>();
     if (idsProductos.length > 0) {
-      const { data: productos } = await supabase.from('productos').select('id, tarifa_iva').in('id', idsProductos);
-      for (const p of productos ?? []) tarifasPorProducto.set(p.id, p.tarifa_iva);
+      const { data: productos } = await supabase.from('productos').select('id, codigo_principal, tarifa_iva').in('id', idsProductos);
+      for (const p of productos ?? []) {
+        tarifasPorProducto.set(p.id, p.tarifa_iva);
+        codigosPorProducto.set(p.id, p.codigo_principal);
+      }
     }
 
     let subtotal0 = 0;
@@ -267,7 +271,9 @@ export async function registrarRutasProformas(app: FastifyInstance) {
       });
 
       detallesFactura.push({
-        codigoPrincipal: item.producto_id ?? 'VARIOS',
+        // El SRI exige codigoPrincipal de máximo 25 caracteres — nunca el
+        // id interno (UUID, 36 caracteres) del producto.
+        codigoPrincipal: item.producto_id ? (codigosPorProducto.get(item.producto_id) ?? 'VARIOS').slice(0, 25) : 'VARIOS',
         descripcion: item.descripcion,
         cantidad: item.cantidad,
         precioUnitario: item.precio_unitario,
