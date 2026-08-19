@@ -60,9 +60,20 @@ interface VentaBody {
 // Códigos de porcentaje de IVA que exige el SRI en cada línea (catálogo oficial).
 const CODIGO_PORCENTAJE_IVA: Record<string, string> = {
   '0': '0',
+  '5': '5',
   '15': '4',
   exento: '7',
   no_objeto: '6',
+};
+
+// Tasa real aplicada según la tarifa — normativa vigente (2026): 15%
+// general, 5% para materiales de construcción, 0%/exento/no objeto sin IVA.
+const TASA_POR_TARIFA: Record<string, number> = {
+  '0': 0,
+  '5': 0.05,
+  '15': 0.15,
+  exento: 0,
+  no_objeto: 0,
 };
 
 function redondear(valor: number): number {
@@ -255,6 +266,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
     }> = [];
 
     let subtotal0 = 0;
+    let subtotal5 = 0;
     let subtotal15 = 0;
     let totalDescuento = 0;
     let totalIva = 0;
@@ -300,10 +312,11 @@ export async function registrarRutasPos(app: FastifyInstance) {
 
       const precioTotalSinImpuesto = redondear(item.cantidad * precioUnitario - descuento);
       const codigoPorcentaje = CODIGO_PORCENTAJE_IVA[tarifaIva] ?? '4';
-      const porcentajeIva = tarifaIva === '15' ? 0.15 : 0;
+      const porcentajeIva = TASA_POR_TARIFA[tarifaIva] ?? 0;
       const valorIva = redondear(precioTotalSinImpuesto * porcentajeIva);
 
       if (tarifaIva === '15') subtotal15 = redondear(subtotal15 + precioTotalSinImpuesto);
+      else if (tarifaIva === '5') subtotal5 = redondear(subtotal5 + precioTotalSinImpuesto);
       else subtotal0 = redondear(subtotal0 + precioTotalSinImpuesto);
       totalDescuento = redondear(totalDescuento + descuento);
       totalIva = redondear(totalIva + valorIva);
@@ -347,7 +360,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
     }
 
     const propina = redondear(body.propina ?? 0);
-    const totalSinImpuestos = redondear(subtotal0 + subtotal15);
+    const totalSinImpuestos = redondear(subtotal0 + subtotal5 + subtotal15);
     const importeTotal = redondear(totalSinImpuestos + totalIva + propina);
 
     const sumaPagos = redondear(body.pagos.reduce((acc, p) => acc + p.valor, 0));
@@ -410,6 +423,7 @@ export async function registrarRutasPos(app: FastifyInstance) {
       p_cliente_id: cliente.id,
       p_tipo: 'factura',
       p_subtotal_0: subtotal0,
+      p_subtotal_5: subtotal5,
       p_subtotal_15: subtotal15,
       p_total_descuento: totalDescuento,
       p_total_iva: totalIva,
@@ -435,6 +449,14 @@ export async function registrarRutasPos(app: FastifyInstance) {
     const totalConImpuestos: TotalTax[] = [];
     if (subtotal0 > 0) {
       totalConImpuestos.push({ codigo: '2', codigoPorcentaje: '0', baseImponible: subtotal0, valor: 0 });
+    }
+    if (subtotal5 > 0) {
+      totalConImpuestos.push({
+        codigo: '2',
+        codigoPorcentaje: '5',
+        baseImponible: subtotal5,
+        valor: redondear(subtotal5 * 0.05),
+      });
     }
     if (subtotal15 > 0) {
       totalConImpuestos.push({

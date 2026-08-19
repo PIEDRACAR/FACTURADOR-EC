@@ -42,6 +42,7 @@ interface DatosRide {
     fecha_autorizacion: string | null;
     estado: string;
     subtotal_0: number;
+    subtotal_5: number;
     subtotal_15: number;
     total_descuento: number;
     total_iva: number;
@@ -219,12 +220,9 @@ export async function renderizarRidePdf(c: DatosRide['comprobante']): Promise<Bu
     y += 12;
   }
 
-  const filasTotales: Array<[string, number]> = [
-    ['Subtotal 15%', c.subtotal_15],
-    ['Subtotal 0%', c.subtotal_0],
-    ['Descuento', c.total_descuento],
-    ['IVA 15%', c.total_iva],
-  ];
+  const filasTotales: Array<[string, number]> = [['Subtotal 15%', c.subtotal_15]];
+  if (c.subtotal_5 > 0) filasTotales.push(['Subtotal 5%', c.subtotal_5]);
+  filasTotales.push(['Subtotal 0%', c.subtotal_0], ['Descuento', c.total_descuento], ['IVA', c.total_iva]);
   if (c.propina > 0) filasTotales.push(['Propina', c.propina]);
 
   let yTotales = yFormasPago;

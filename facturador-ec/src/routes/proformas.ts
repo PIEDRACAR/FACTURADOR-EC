@@ -18,7 +18,8 @@ const CONSUMIDOR_FINAL = {
   razonSocial: 'CONSUMIDOR FINAL',
 };
 
-const CODIGO_PORCENTAJE_IVA: Record<string, string> = { '0': '0', '15': '4', exento: '7', no_objeto: '6' };
+const CODIGO_PORCENTAJE_IVA: Record<string, string> = { '0': '0', '5': '5', '15': '4', exento: '7', no_objeto: '6' };
+const TASA_POR_TARIFA: Record<string, number> = { '0': 0, '5': 0.05, '15': 0.15, exento: 0, no_objeto: 0 };
 
 interface ItemProformaBody {
   productoId?: string;
@@ -234,6 +235,7 @@ export async function registrarRutasProformas(app: FastifyInstance) {
     }
 
     let subtotal0 = 0;
+    let subtotal5 = 0;
     let subtotal15 = 0;
     let totalDescuento = 0;
     let totalIva = 0;
@@ -250,10 +252,11 @@ export async function registrarRutasProformas(app: FastifyInstance) {
       const tarifaIva = item.producto_id ? tarifasPorProducto.get(item.producto_id) ?? '15' : '15';
       const base = redondear(item.cantidad * item.precio_unitario - item.descuento);
       const codigoPorcentaje = CODIGO_PORCENTAJE_IVA[tarifaIva] ?? '4';
-      const porcentaje = tarifaIva === '15' ? 0.15 : 0;
+      const porcentaje = TASA_POR_TARIFA[tarifaIva] ?? 0;
       const valorIva = redondear(base * porcentaje);
 
       if (tarifaIva === '15') subtotal15 = redondear(subtotal15 + base);
+      else if (tarifaIva === '5') subtotal5 = redondear(subtotal5 + base);
       else subtotal0 = redondear(subtotal0 + base);
       totalDescuento = redondear(totalDescuento + item.descuento);
       totalIva = redondear(totalIva + valorIva);
@@ -283,7 +286,7 @@ export async function registrarRutasProformas(app: FastifyInstance) {
       });
     }
 
-    const totalSinImpuestos = redondear(subtotal0 + subtotal15);
+    const totalSinImpuestos = redondear(subtotal0 + subtotal5 + subtotal15);
     const importeTotal = redondear(totalSinImpuestos + totalIva);
 
     const { data: comprobanteId, error: errorVenta } = await supabase.rpc('crear_venta', {
@@ -292,6 +295,7 @@ export async function registrarRutasProformas(app: FastifyInstance) {
       p_cliente_id: proforma.cliente_id,
       p_tipo: 'factura',
       p_subtotal_0: subtotal0,
+      p_subtotal_5: subtotal5,
       p_subtotal_15: subtotal15,
       p_total_descuento: totalDescuento,
       p_total_iva: totalIva,
@@ -312,7 +316,8 @@ export async function registrarRutasProformas(app: FastifyInstance) {
     const cliente = proforma.clientes as { tipo_identificacion: string; identificacion: string; razon_social: string; direccion: string | null };
     const totalConImpuestos: TotalTax[] = [];
     if (subtotal0 > 0) totalConImpuestos.push({ codigo: '2', codigoPorcentaje: '0', baseImponible: subtotal0, valor: 0 });
-    if (subtotal15 > 0) totalConImpuestos.push({ codigo: '2', codigoPorcentaje: '4', baseImponible: subtotal15, valor: totalIva });
+    if (subtotal5 > 0) totalConImpuestos.push({ codigo: '2', codigoPorcentaje: '5', baseImponible: subtotal5, valor: redondear(subtotal5 * 0.05) });
+    if (subtotal15 > 0) totalConImpuestos.push({ codigo: '2', codigoPorcentaje: '4', baseImponible: subtotal15, valor: redondear(subtotal15 * 0.15) });
 
     const hoy = new Date();
     const fechaEmision = `${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`;

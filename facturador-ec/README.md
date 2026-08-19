@@ -148,6 +148,7 @@ Ejecutar en el SQL Editor de Supabase, en este orden, cada una una sola vez:
 4. `sql/migracion_secuencial_nulo.sql` — permite `comprobantes.secuencial` nulo hasta emitir
 5. `sql/migracion_crear_venta_atomica.sql` — función `crear_venta` (comprobante + inventario en una transacción)
 6. `sql/migracion_certificado_unico_por_alias.sql` — permite actualizar (no solo crear) el certificado de un emisor ya registrado
+7. `sql/migracion_iva_5_porciento.sql` — agrega la tarifa de IVA 5% (materiales de construcción) y la columna `subtotal_5`
 
 ## Desplegar en Render / Railway
 
@@ -170,6 +171,22 @@ Ejecutar en el SQL Editor de Supabase, en este orden, cada una una sola vez:
 5. Ejecutar todas las migraciones de la sección anterior en Supabase.
 6. **Plan gratuito:** el servicio puede "dormirse" tras un rato sin
    tráfico y tardar unos segundos en despertar en la siguiente petición.
+
+## Normativa ecuatoriana aplicada
+
+- **Tarifas de IVA:** 15% (general, vigente para 2026 según Circular del SRI
+  NAC-DGECCGC25-00000006), 5% (materiales de construcción), 0%, exento y no
+  objeto de impuesto — con sus códigos de porcentaje oficiales exactos
+  (Ficha Técnica de Comprobantes Electrónicos: 0→código 0, 5→código 5,
+  15→código 4, exento→código 7, no objeto→código 6).
+- **Catálogo de formas de pago:** los 8 códigos oficiales del SRI (01
+  efectivo/sin sistema financiero, 15 compensación de deudas, 16 tarjeta de
+  débito, 17 dinero electrónico, 18 tarjeta prepago, 19 tarjeta de crédito,
+  20 otros con sistema financiero, 21 endoso de títulos).
+- **Bancarización:** desde diciembre de 2023, todo pago superior a $500 sin
+  usar el sistema financiero (código 01) no es deducible para el comprador
+  ni da derecho a crédito tributario de IVA. El POS muestra un aviso
+  informativo (no bloqueante) cuando una venta cae en este caso.
 
 ## Seguridad — certificado y contraseña
 

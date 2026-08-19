@@ -314,6 +314,7 @@
           <label>IVA</label>
           <select id="libre-iva">
             <option value="15">15%</option>
+            <option value="5">5%</option>
             <option value="0">0%</option>
           </select>
         </div>
@@ -370,6 +371,7 @@
     <div class="resumen-linea"><span>IVA</span><span id="resumen-iva">$0.00</span></div>
     <div class="resumen-linea"><span>Pagado</span><span id="resumen-pagado">$0.00</span></div>
     <div class="resumen-linea diferencia" id="resumen-diferencia" style="display:none;"></div>
+    <div class="aviso" id="aviso-bancarizacion" style="display:none; margin-top:10px; margin-bottom:0;"></div>
     <div class="resumen-linea total"><span>Total</span><span id="resumen-total">$0.00</span></div>
   </div>
 </div>
@@ -406,9 +408,11 @@ let pagos = [{ formaPagoCodigo: '01', valor: 0 }];
 function dinero(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
 function redondear(n) { return Math.round(n * 100) / 100; }
 
+const TASA_POR_TARIFA = { '15': 0.15, '5': 0.05, '0': 0 };
+
 function calcularLinea(item) {
   const base = redondear(item.cantidad * item.precioUnitario);
-  const iva = item.tarifaIva === '15' ? redondear(base * 0.15) : 0;
+  const iva = redondear(base * (TASA_POR_TARIFA[item.tarifaIva] ?? 0));
   return { base, iva, total: redondear(base + iva) };
 }
 
@@ -644,6 +648,21 @@ function actualizarResumen() {
 
   const listo = carrito.length > 0 && Math.abs(diferencia) <= 0.01 && !!emisorId;
   document.getElementById('btn-cobrar').disabled = !listo;
+
+  // Aviso de bancarización (normativa vigente desde dic. 2023): ventas
+  // mayores a $500 pagadas sin usar el sistema financiero (efectivo,
+  // código 01) no son deducibles para el comprador ni dan derecho a
+  // crédito tributario de IVA. Es solo informativo — no bloquea la venta.
+  const avisoBancarizacion = document.getElementById('aviso-bancarizacion');
+  const pagadoEnEfectivo = redondear(pagos.filter((p) => p.formaPagoCodigo === '01').reduce((acc, p) => acc + (p.valor || 0), 0));
+  if (total > 500 && pagadoEnEfectivo > 0) {
+    avisoBancarizacion.style.display = 'block';
+    avisoBancarizacion.textContent =
+      `Esta venta supera $500 y tiene ${dinero(pagadoEnEfectivo)} en efectivo — por normativa de bancarización, ` +
+      `esa parte no será deducible ni dará crédito tributario de IVA al comprador. Si el cliente lo necesita, sugiérele pagar con tarjeta o transferencia.`;
+  } else {
+    avisoBancarizacion.style.display = 'none';
+  }
 }
 
 // Si solo hay una forma de pago, autocompletar su valor con el total (comodidad).
