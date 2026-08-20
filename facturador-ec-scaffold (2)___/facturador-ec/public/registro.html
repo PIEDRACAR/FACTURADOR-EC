@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de emisor — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8;
+    --azul-osc: #1e3a8a;
+    --gris-borde: #d1d5db;
+    --gris-fondo: #f8fafc;
+    --rojo: #dc2626;
+    --verde: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo);
+    margin: 0;
+    padding: 24px 16px 64px;
+    color: #1f2937;
+  }
+  .contenedor {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.4rem;
+    color: var(--azul-osc);
+    margin-bottom: 4px;
+  }
+  p.subtitulo {
+    color: #6b7280;
+    margin-top: 0;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+  }
+  .tarjeta {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 16px;
+  }
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+    margin-top: 14px;
+  }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="password"], input[type="date"], select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--gris-borde);
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+  input[type="file"] {
+    width: 100%;
+    padding: 8px 0;
+  }
+  .ayuda {
+    font-size: 0.78rem;
+    color: #6b7280;
+    margin-top: 3px;
+  }
+  .fila-doble {
+    display: flex;
+    gap: 12px;
+  }
+  .fila-doble > div { flex: 1; }
+  .checkbox-fila {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .checkbox-fila input { width: auto; }
+  .checkbox-fila label { margin: 0; font-weight: 500; }
+  button {
+    width: 100%;
+    background: var(--azul);
+    color: white;
+    border: none;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 20px;
+    cursor: pointer;
+  }
+  button:disabled { background: #93c5fd; cursor: not-allowed; }
+  .mensaje {
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 16px;
+    font-size: 0.9rem;
+    display: none;
+  }
+  .mensaje.exito { background: #dcfce7; color: #166534; display: block; }
+  .mensaje.error { background: #fee2e2; color: #991b1b; display: block; }
+  .seccion-titulo {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9ca3af;
+    font-weight: 700;
+    margin: 24px 0 8px;
+  }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <h1>Registro de negocio</h1>
+  <p class="subtitulo">Completa estos datos una sola vez para empezar a emitir comprobantes electrónicos ante el SRI.</p>
+
+  <form id="form-registro">
+    <div class="tarjeta">
+      <div class="seccion-titulo">Datos tributarios</div>
+
+      <label for="ruc">RUC (13 dígitos)</label>
+      <input type="text" id="ruc" inputmode="numeric" maxlength="13" required placeholder="0705063105001">
+
+      <label for="razonSocial">Razón social</label>
+      <input type="text" id="razonSocial" required placeholder="Como aparece en tu RUC">
+
+      <label for="direccionMatriz">Dirección matriz</label>
+      <input type="text" id="direccionMatriz" required placeholder="Av. y calle, ciudad">
+
+      <div class="checkbox-fila">
+        <input type="checkbox" id="obligadoContabilidad">
+        <label for="obligadoContabilidad">Obligado a llevar contabilidad</label>
+      </div>
+
+      <label for="ambiente">Ambiente</label>
+      <select id="ambiente" required>
+        <option value="pruebas">Pruebas (recomendado para empezar)</option>
+        <option value="produccion">Producción (facturas reales)</option>
+      </select>
+      <div class="ayuda">Usa "Pruebas" hasta confirmar que todo funciona correctamente.</div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="seccion-titulo">Punto de emisión</div>
+      <div class="fila-doble">
+        <div>
+          <label for="establecimiento">Establecimiento</label>
+          <input type="text" id="establecimiento" value="001" maxlength="3">
+        </div>
+        <div>
+          <label for="puntoEmision">Punto de emisión</label>
+          <input type="text" id="puntoEmision" value="001" maxlength="3">
+        </div>
+      </div>
+      <div class="ayuda">Si tienes un solo local y un solo punto de venta, deja "001" y "001".</div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="seccion-titulo">Certificado de firma electrónica</div>
+
+      <label for="archivoP12">Archivo .p12</label>
+      <input type="file" id="archivoP12" accept=".p12" required>
+
+      <label for="p12Password">Contraseña del certificado</label>
+      <input type="password" id="p12Password" required>
+      <div class="ayuda">Se guarda cifrada. Nadie más puede verla en texto plano, ni siquiera desde la base de datos.</div>
+
+      <label for="fechaExpiracion">Fecha de expiración del certificado</label>
+      <input type="date" id="fechaExpiracion" required>
+    </div>
+
+    <button type="submit" id="btn-enviar">Registrar negocio</button>
+    <div class="mensaje" id="mensaje"></div>
+  </form>
+</div>
+
+<script>
+function archivoABase64(archivo) {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onload = () => {
+      // result viene como "data:application/octet-stream;base64,XXXXX" — solo nos interesa lo de después de la coma
+      const base64 = lector.result.split(',')[1];
+      resolve(base64);
+    };
+    lector.onerror = reject;
+    lector.readAsDataURL(archivo);
+  });
+}
+
+document.getElementById('form-registro').addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+
+  const boton = document.getElementById('btn-enviar');
+  const mensaje = document.getElementById('mensaje');
+  mensaje.className = 'mensaje';
+  mensaje.textContent = '';
+
+  const archivo = document.getElementById('archivoP12').files[0];
+  if (!archivo) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Debes adjuntar el archivo .p12.';
+    return;
+  }
+
+  boton.disabled = true;
+  boton.textContent = 'Registrando...';
+
+  try {
+    const p12Base64 = await archivoABase64(archivo);
+
+    const cuerpo = {
+      ruc: document.getElementById('ruc').value.trim(),
+      razonSocial: document.getElementById('razonSocial').value.trim(),
+      direccionMatriz: document.getElementById('direccionMatriz').value.trim(),
+      obligadoContabilidad: document.getElementById('obligadoContabilidad').checked,
+      ambiente: document.getElementById('ambiente').value,
+      establecimiento: document.getElementById('establecimiento').value.trim() || '001',
+      puntoEmision: document.getElementById('puntoEmision').value.trim() || '001',
+      p12Base64,
+      p12Password: document.getElementById('p12Password').value,
+      fechaExpiracionCertificado: document.getElementById('fechaExpiracion').value,
+    };
+
+    const respuesta = await fetch('/emisores/registrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+    });
+
+    const datos = await respuesta.json();
+
+    if (!respuesta.ok) {
+      throw new Error(datos.error || 'Error desconocido al registrar.');
+    }
+
+    mensaje.className = 'mensaje exito';
+    mensaje.innerHTML = `${datos.mensaje || 'Negocio registrado correctamente.'} <a href="/?emisorId=${encodeURIComponent(datos.emisorId)}" style="color:#166534; font-weight:700; text-decoration:underline;">Ir a tu panel →</a>`;
+    document.getElementById('form-registro').reset();
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false;
+    boton.textContent = 'Registrar negocio';
+  }
+});
+</script>
+</body>
+</html>
