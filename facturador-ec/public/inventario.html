@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626; --rojo-fondo: #fee2e2;
+    --ambar: #d97706; --ambar-fondo: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 760px; margin: 0 auto; padding: 16px; }
+
+  .pestanas { display: flex; gap: 6px; margin-bottom: 16px; background: white; padding: 5px; border-radius: 12px; border: 1px solid var(--gris-borde); }
+  .pestana {
+    flex: 1; text-align: center; padding: 10px 8px; border-radius: 9px; font-size: 0.84rem; font-weight: 700;
+    cursor: pointer; color: var(--gris-texto); transition: all 0.15s; user-select: none;
+  }
+  .pestana.activa { background: var(--azul); color: white; }
+  .seccion { display: none; }
+  .seccion.visible { display: block; }
+
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 16px; }
+
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gris-texto); margin-top: 14px; margin-bottom: 5px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], select, textarea {
+    width: 100%; padding: 11px 13px; border: 1px solid var(--gris-borde); border-radius: 9px; font-size: 0.95rem;
+    font-family: inherit;
+  }
+  .fila-doble { display: flex; gap: 12px; }
+  .fila-doble > div { flex: 1; }
+
+  .buscador-producto { position: relative; }
+  .resultados {
+    position: absolute; left: 0; right: 0; background: white; border: 1px solid var(--gris-borde);
+    border-radius: 10px; margin-top: 4px; max-height: 240px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 20; display: none;
+  }
+  .resultados.visible { display: block; }
+  .resultado-item { padding: 11px 14px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--gris-fondo); }
+  .resultado-item:last-child { border-bottom: none; }
+  .resultado-item:hover { background: var(--azul-suave); }
+  .resultado-item .desc { font-size: 0.88rem; font-weight: 500; }
+  .resultado-item .stock { font-size: 0.78rem; color: var(--gris-texto); white-space: nowrap; }
+
+  .producto-seleccionado {
+    display: none; background: var(--azul-suave); border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 12px 14px; margin-top: 4px; align-items: center; justify-content: space-between;
+  }
+  .producto-seleccionado.visible { display: flex; }
+  .producto-seleccionado .info .nombre { font-weight: 700; font-size: 0.9rem; color: var(--azul-osc); }
+  .producto-seleccionado .info .meta { font-size: 0.78rem; color: var(--gris-texto); margin-top: 2px; }
+  .producto-seleccionado .quitar { color: var(--azul); font-size: 0.78rem; cursor: pointer; font-weight: 600; }
+
+  button.principal {
+    width: 100%; background: var(--azul); color: white; border: none; padding: 14px;
+    border-radius: 10px; font-size: 0.95rem; font-weight: 700; margin-top: 18px; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(29,78,216,0.25);
+  }
+  button.principal:disabled { background: #93c5fd; box-shadow: none; cursor: not-allowed; }
+  button.principal.ajuste { background: var(--ambar); box-shadow: 0 2px 6px rgba(217,119,6,0.25); }
+  button.principal.ajuste:disabled { background: #fbbf88; box-shadow: none; }
+
+  .mensaje { border-radius: 10px; padding: 12px 14px; margin-top: 14px; font-size: 0.86rem; display: none; }
+  .mensaje.exito { background: var(--verde-fondo); color: #166534; display: block; }
+  .mensaje.error { background: var(--rojo-fondo); color: #991b1b; display: block; }
+
+  .ayuda { font-size: 0.76rem; color: var(--gris-texto); margin-top: 5px; }
+
+  .filtro-kardex { margin-bottom: 16px; }
+  .kardex-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .kardex-item:last-child { border-bottom: none; }
+  .kardex-marca { width: 8px; border-radius: 4px; flex-shrink: 0; align-self: stretch; }
+  .kardex-marca.entrada { background: var(--verde); }
+  .kardex-marca.salida { background: var(--azul); }
+  .kardex-marca.ajuste { background: var(--ambar); }
+  .kardex-cuerpo { flex: 1; min-width: 0; }
+  .kardex-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .kardex-producto { font-size: 0.88rem; font-weight: 700; }
+  .kardex-cantidad { font-size: 0.92rem; font-weight: 800; white-space: nowrap; }
+  .kardex-cantidad.positiva { color: var(--verde); }
+  .kardex-cantidad.negativa { color: var(--rojo); }
+  .kardex-meta { font-size: 0.76rem; color: var(--gris-texto); margin-top: 3px; }
+  .kardex-badge {
+    display: inline-block; font-size: 0.66rem; font-weight: 700; padding: 1px 8px; border-radius: 20px;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .kardex-badge.entrada { background: var(--verde-fondo); color: #166534; }
+  .kardex-badge.salida { background: var(--azul-suave); color: var(--azul-osc); }
+  .kardex-badge.ajuste { background: var(--ambar-fondo); color: #92400e; }
+  .kardex-nota { font-size: 0.78rem; color: #475569; margin-top: 4px; font-style: italic; }
+
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 30px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Inventario</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-catalogo" href="#">Catálogo</a>
+  </div>
+</header>
+
+<div class="contenedor">
+
+  <div class="pestanas">
+    <div class="pestana activa" data-seccion="entrada">📥 Entrada</div>
+    <div class="pestana" data-seccion="ajuste">⚖️ Ajuste</div>
+    <div class="pestana" data-seccion="kardex">📋 Kardex</div>
+  </div>
+
+  <div class="seccion visible" id="seccion-entrada">
+    <div class="tarjeta">
+      <h2>Registrar entrada de mercadería</h2>
+
+      <label>Producto</label>
+      <div class="buscador-producto">
+        <input type="text" id="buscador-entrada" placeholder="Buscar producto por nombre o código…" autocomplete="off">
+        <div class="resultados" id="resultados-entrada"></div>
+      </div>
+      <div class="producto-seleccionado" id="seleccionado-entrada">
+        <div class="info">
+          <div class="nombre" id="seleccionado-entrada-nombre"></div>
+          <div class="meta" id="seleccionado-entrada-meta"></div>
+        </div>
+        <span class="quitar" id="quitar-entrada">Cambiar</span>
+      </div>
+
+      <div class="fila-doble">
+        <div>
+          <label>Cantidad que ingresa</label>
+          <input type="text" id="entrada-cantidad" inputmode="decimal" placeholder="0">
+        </div>
+        <div>
+          <label>Costo unitario de compra</label>
+          <input type="text" id="entrada-costo" inputmode="decimal" placeholder="0.00">
+        </div>
+      </div>
+      <div class="ayuda">El costo promedio del producto se recalcula automáticamente con esta compra.</div>
+
+      <label>Proveedor / referencia (opcional)</label>
+      <input type="text" id="entrada-nota" placeholder="Ej: Distribuidora XYZ, factura 001-002-123">
+
+      <button class="principal" id="btn-entrada" type="button">Registrar entrada</button>
+      <div class="mensaje" id="mensaje-entrada"></div>
+    </div>
+  </div>
+
+  <div class="seccion" id="seccion-ajuste">
+    <div class="tarjeta">
+      <h2>Ajuste por conteo físico</h2>
+
+      <label>Producto</label>
+      <div class="buscador-producto">
+        <input type="text" id="buscador-ajuste" placeholder="Buscar producto por nombre o código…" autocomplete="off">
+        <div class="resultados" id="resultados-ajuste"></div>
+      </div>
+      <div class="producto-seleccionado" id="seleccionado-ajuste">
+        <div class="info">
+          <div class="nombre" id="seleccionado-ajuste-nombre"></div>
+          <div class="meta" id="seleccionado-ajuste-meta"></div>
+        </div>
+        <span class="quitar" id="quitar-ajuste">Cambiar</span>
+      </div>
+
+      <label>Stock real contado</label>
+      <input type="text" id="ajuste-stock" inputmode="decimal" placeholder="0">
+      <div class="ayuda">Reemplaza el stock actual por este número exacto — no lo suma ni resta.</div>
+
+      <label>Motivo del ajuste</label>
+      <textarea id="ajuste-motivo" rows="2" placeholder="Ej: Conteo físico mensual, producto dañado, merma…"></textarea>
+
+      <button class="principal ajuste" id="btn-ajuste" type="button">Registrar ajuste</button>
+      <div class="mensaje" id="mensaje-ajuste"></div>
+    </div>
+  </div>
+
+  <div class="seccion" id="seccion-kardex">
+    <div class="tarjeta">
+      <h2>Historial de movimientos</h2>
+      <div class="filtro-kardex">
+        <div class="buscador-producto">
+          <input type="text" id="buscador-kardex" placeholder="Filtrar por producto (vacío = todos)…" autocomplete="off">
+          <div class="resultados" id="resultados-kardex"></div>
+        </div>
+        <div class="producto-seleccionado" id="seleccionado-kardex">
+          <div class="info">
+            <div class="nombre" id="seleccionado-kardex-nombre"></div>
+          </div>
+          <span class="quitar" id="quitar-kardex">Ver todos</span>
+        </div>
+      </div>
+      <div id="lista-kardex"><div class="vacio">Cargando…</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId');
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-catalogo').href = '/productos-admin?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+function dinero(n) { return '$' + Number(n).toFixed(2); }
+
+document.querySelectorAll('.pestana').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.pestana').forEach((t) => t.classList.remove('activa'));
+    document.querySelectorAll('.seccion').forEach((s) => s.classList.remove('visible'));
+    tab.classList.add('activa');
+    document.getElementById('seccion-' + tab.dataset.seccion).classList.add('visible');
+    if (tab.dataset.seccion === 'kardex') cargarKardex();
+  });
+});
+
+let productosCache = null;
+async function cargarProductos() {
+  if (productosCache !== null) return productosCache;
+  const resp = await fetch('/productos?emisorId=' + encodeURIComponent(emisorId));
+  productosCache = resp.ok ? await resp.json() : [];
+  return productosCache;
+}
+
+function configurarBuscadorProducto(prefijo, alSeleccionar) {
+  const input = document.getElementById('buscador-' + prefijo);
+  const caja = document.getElementById('resultados-' + prefijo);
+  const seleccionado = document.getElementById('seleccionado-' + prefijo);
+  const quitar = document.getElementById('quitar-' + prefijo);
+
+  input.addEventListener('input', async (e) => {
+    const texto = e.target.value.trim().toLowerCase();
+    if (!texto) { caja.classList.remove('visible'); return; }
+    const productos = await cargarProductos();
+    const filtrados = productos.filter((p) =>
+      p.descripcion.toLowerCase().includes(texto) || p.codigo_principal.toLowerCase().includes(texto)
+    ).slice(0, 10);
+
+    caja.innerHTML = filtrados.length
+      ? filtrados.map((p) => `<div class="resultado-item" data-id="${p.id}"><span class="desc">${p.descripcion}</span><span class="stock">Stock: ${p.stock_actual}</span></div>`).join('')
+      : '<div class="resultado-item"><span class="desc">Sin resultados</span></div>';
+    caja.classList.add('visible');
+
+    caja.querySelectorAll('[data-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const p = productos.find((x) => x.id === el.dataset.id);
+        input.value = '';
+        input.style.display = 'none';
+        caja.classList.remove('visible');
+        seleccionado.classList.add('visible');
+        alSeleccionar(p);
+      });
+    });
+  });
+
+  quitar.addEventListener('click', () => {
+    input.style.display = 'block';
+    input.value = '';
+    seleccionado.classList.remove('visible');
+    alSeleccionar(null);
+  });
+}
+
+let productoEntrada = null;
+configurarBuscadorProducto('entrada', (p) => {
+  productoEntrada = p;
+  if (p) {
+    document.getElementById('seleccionado-entrada-nombre').textContent = p.descripcion;
+    document.getElementById('seleccionado-entrada-meta').textContent = `Stock actual: ${p.stock_actual}`;
+  }
+});
+
+document.getElementById('btn-entrada').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-entrada');
+  const mensaje = document.getElementById('mensaje-entrada');
+  mensaje.className = 'mensaje';
+
+  const cantidad = parseFloat(document.getElementById('entrada-cantidad').value);
+  const costo = parseFloat(document.getElementById('entrada-costo').value);
+  const nota = document.getElementById('entrada-nota').value.trim();
+
+  if (!productoEntrada) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Selecciona un producto.'; return; }
+  if (isNaN(cantidad) || cantidad <= 0) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Ingresa una cantidad válida.'; return; }
+  if (isNaN(costo) || costo < 0) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Ingresa un costo unitario válido.'; return; }
+
+  boton.disabled = true; boton.textContent = 'Registrando…';
+  try {
+    const resp = await fetch('/inventario/entrada', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productoId: productoEntrada.id, cantidad, costoUnitario: costo, nota: nota || undefined }),
+    });
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = `Listo. Nuevo stock: ${datos.stockResultante} — costo promedio: ${dinero(datos.costoPromedioResultante)}`;
+    document.getElementById('entrada-cantidad').value = '';
+    document.getElementById('entrada-costo').value = '';
+    document.getElementById('entrada-nota').value = '';
+    productosCache = null;
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Registrar entrada';
+  }
+});
+
+let productoAjuste = null;
+configurarBuscadorProducto('ajuste', (p) => {
+  productoAjuste = p;
+  if (p) {
+    document.getElementById('seleccionado-ajuste-nombre').textContent = p.descripcion;
+    document.getElementById('seleccionado-ajuste-meta').textContent = `Stock actual: ${p.stock_actual}`;
+  }
+});
+
+document.getElementById('btn-ajuste').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-ajuste');
+  const mensaje = document.getElementById('mensaje-ajuste');
+  mensaje.className = 'mensaje';
+
+  const nuevoStock = parseFloat(document.getElementById('ajuste-stock').value);
+  const motivo = document.getElementById('ajuste-motivo').value.trim();
+
+  if (!productoAjuste) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Selecciona un producto.'; return; }
+  if (isNaN(nuevoStock) || nuevoStock < 0) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Ingresa un stock válido.'; return; }
+  if (!motivo) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Indica el motivo del ajuste.'; return; }
+
+  boton.disabled = true; boton.textContent = 'Registrando…';
+  try {
+    const resp = await fetch('/inventario/ajuste', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productoId: productoAjuste.id, nuevoStock, motivo }),
+    });
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = `Ajuste registrado. Nuevo stock: ${datos.stockResultante}`;
+    document.getElementById('ajuste-stock').value = '';
+    document.getElementById('ajuste-motivo').value = '';
+    productosCache = null;
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Registrar ajuste';
+  }
+});
+
+let productoKardexId = null;
+configurarBuscadorProducto('kardex', (p) => {
+  productoKardexId = p ? p.id : null;
+  if (p) document.getElementById('seleccionado-kardex-nombre').textContent = p.descripcion;
+  cargarKardex();
+});
+
+const NOMBRES_TIPO = { entrada: 'Entrada', salida: 'Salida', ajuste: 'Ajuste' };
+
+async function cargarKardex() {
+  const cont = document.getElementById('lista-kardex');
+  if (!emisorId) { cont.innerHTML = '<div class="vacio">Falta emisorId en la URL.</div>'; return; }
+  cont.innerHTML = '<div class="vacio">Cargando…</div>';
+
+  let url = '/inventario/kardex?emisorId=' + encodeURIComponent(emisorId);
+  if (productoKardexId) url += '&productoId=' + encodeURIComponent(productoKardexId);
+
+  const resp = await fetch(url);
+  const movimientos = resp.ok ? await resp.json() : [];
+
+  if (movimientos.length === 0) {
+    cont.innerHTML = '<div class="vacio">Sin movimientos todavía.</div>';
+    return;
+  }
+
+  cont.innerHTML = movimientos.map((m) => {
+    const cantidadNum = Number(m.cantidad);
+    const esPositiva = cantidadNum > 0;
+    const fecha = new Date(m.created_at).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const producto = m.productos ? m.productos.descripcion : '(producto eliminado)';
+    return `
+      <div class="kardex-item">
+        <div class="kardex-marca ${m.tipo}"></div>
+        <div class="kardex-cuerpo">
+          <div class="kardex-cab">
+            <div class="kardex-producto">${producto}</div>
+            <div class="kardex-cantidad ${esPositiva ? 'positiva' : 'negativa'}">${esPositiva ? '+' : ''}${cantidadNum}</div>
+          </div>
+          <div class="kardex-meta">
+            <span class="kardex-badge ${m.tipo}">${NOMBRES_TIPO[m.tipo] || m.tipo}</span>
+            ${fecha} · Saldo: ${m.saldo_cantidad} · Costo prom.: ${dinero(m.saldo_costo_promedio)}
+          </div>
+          ${m.nota ? `<div class="kardex-nota">${m.nota}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+cargarKardex();
+</script>
+</body>
+</html>

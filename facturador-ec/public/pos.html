@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Punto de Venta — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8;
+    --azul-osc: #1e3a8a;
+    --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0;
+    --gris-fondo: #f8fafc;
+    --gris-texto: #64748b;
+    --verde: #16a34a;
+    --verde-fondo: #dcfce7;
+    --rojo: #dc2626;
+    --rojo-fondo: #fee2e2;
+    --ambar: #d97706;
+    --ambar-fondo: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo);
+    margin: 0;
+    padding: 0 0 100px;
+    color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul));
+    color: white;
+    padding: 18px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 {
+    font-size: 1.15rem;
+    margin: 0;
+    font-weight: 600;
+  }
+  header .emisor {
+    font-size: 0.8rem;
+    opacity: 0.85;
+    margin-top: 2px;
+  }
+  header a.enlace-catalogo, header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+    display: inline-block; margin-top: 8px; margin-right: 6px;
+  }
+  header .nav { margin-top: 4px; }
+  .contenedor {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  .tarjeta {
+    background: white;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom: 16px;
+    border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gris-texto);
+    font-weight: 700;
+    margin: 0 0 14px;
+  }
+
+  /* --- Buscador / selector de producto --- */
+  .buscador {
+    position: relative;
+  }
+  .buscador input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--gris-borde);
+    border-radius: 10px;
+    font-size: 0.95rem;
+  }
+  .resultados {
+    position: absolute;
+    left: 0; right: 0;
+    background: white;
+    border: 1px solid var(--gris-borde);
+    border-radius: 10px;
+    margin-top: 4px;
+    max-height: 260px;
+    overflow-y: auto;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    z-index: 20;
+    display: none;
+  }
+  .resultados.visible { display: block; }
+  .resultado-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--gris-fondo);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+  .resultado-item:hover { background: var(--azul-suave); }
+  .resultado-item .desc { font-size: 0.9rem; font-weight: 500; }
+  .resultado-item .precio { font-size: 0.85rem; color: var(--gris-texto); white-space: nowrap; }
+  .resultado-item .stock-bajo { color: var(--ambar); font-size: 0.72rem; }
+
+  .btn-libre {
+    margin-top: 10px;
+    width: 100%;
+    background: none;
+    border: 1px dashed var(--gris-borde);
+    color: var(--azul);
+    padding: 10px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  /* --- Formulario línea libre --- */
+  .fila-doble { display: flex; gap: 10px; }
+  .fila-doble > div { flex: 1; }
+  .form-libre { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--gris-borde); }
+  .form-libre.visible { display: block; }
+  .form-libre label { font-size: 0.75rem; font-weight: 600; color: var(--gris-texto); display: block; margin-bottom: 3px; margin-top: 8px; }
+  .form-libre input, .form-libre select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.9rem;
+  }
+  .form-libre button {
+    margin-top: 10px; width: 100%; background: var(--azul-osc); color: white; border: none;
+    padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.85rem;
+  }
+
+  /* --- Carrito --- */
+  .linea-carrito {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--gris-fondo);
+    gap: 10px;
+  }
+  .linea-carrito:last-child { border-bottom: none; }
+  .linea-carrito .detalle { flex: 1; }
+  .linea-carrito .detalle .nombre { font-size: 0.92rem; font-weight: 600; }
+  .linea-carrito .detalle .meta { font-size: 0.78rem; color: var(--gris-texto); margin-top: 2px; }
+  .linea-carrito .cantidad-control {
+    display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  }
+  .linea-carrito .cantidad-control button {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--gris-borde);
+    background: var(--gris-fondo); font-size: 0.9rem; cursor: pointer; line-height: 1;
+  }
+  .linea-carrito .cantidad-control span { min-width: 24px; text-align: center; font-size: 0.88rem; font-weight: 600; }
+  .linea-carrito .totales-linea { text-align: right; white-space: nowrap; }
+  .linea-carrito .totales-linea .precio-total { font-weight: 700; font-size: 0.92rem; }
+  .linea-carrito .quitar { color: var(--rojo); font-size: 0.76rem; cursor: pointer; margin-top: 4px; }
+  .carrito-vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 20px 0; }
+
+  /* --- Cliente --- */
+  .cliente-toggle {
+    display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; color: var(--azul); cursor: pointer;
+  }
+  .cliente-form { display: none; margin-top: 12px; }
+  .cliente-form.visible { display: block; }
+  .cliente-form label { font-size: 0.75rem; font-weight: 600; color: var(--gris-texto); display: block; margin-bottom: 3px; margin-top: 8px; }
+  .cliente-form input, .cliente-form select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.9rem;
+  }
+
+  /* --- Formas de pago --- */
+  .pagos-lista { display: flex; flex-direction: column; gap: 12px; }
+  .pago-fila {
+    background: var(--gris-fondo); border: 1px solid var(--gris-borde); border-radius: 12px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .pago-fila-principal { display: flex; gap: 8px; align-items: center; }
+  .pago-icono { font-size: 1.15rem; width: 22px; text-align: center; flex-shrink: 0; }
+  .pago-fila select {
+    flex: 1.3; padding: 9px 8px; border: 1px solid var(--gris-borde); border-radius: 8px;
+    font-size: 0.86rem; background: white;
+  }
+  .pago-valor-envoltorio {
+    flex: 1; display: flex; align-items: center; background: white; border: 1px solid var(--gris-borde);
+    border-radius: 8px; padding: 0 8px;
+  }
+  .pago-signo { color: var(--gris-texto); font-size: 0.85rem; margin-right: 2px; }
+  .pago-fila input {
+    border: none; padding: 9px 0; font-size: 0.88rem; width: 100%; background: transparent;
+  }
+  .pago-fila input:focus { outline: none; }
+  .pago-fila .quitar-pago {
+    color: var(--rojo); font-size: 1rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0;
+    border-radius: 6px;
+  }
+  .pago-fila .quitar-pago:hover { background: var(--rojo-fondo); }
+  .badge-financiero {
+    align-self: flex-start; font-size: 0.68rem; font-weight: 700; padding: 2px 9px; border-radius: 20px;
+    letter-spacing: 0.02em;
+  }
+  .badge-financiero.sin-financiero { background: var(--ambar-fondo); color: #92400e; }
+  .badge-financiero.con-financiero { background: var(--verde-fondo); color: #166534; }
+  .btn-agregar-pago {
+    margin-top: 4px; background: none; border: none; color: var(--azul); font-size: 0.82rem; font-weight: 600; cursor: pointer; text-align: left; padding: 4px 0;
+  }
+
+  /* --- Resumen de totales --- */
+  .resumen-linea { display: flex; justify-content: space-between; font-size: 0.88rem; padding: 3px 0; color: var(--gris-texto); }
+  .resumen-linea.total { font-size: 1.15rem; font-weight: 700; color: #0f172a; padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--gris-borde); }
+  .resumen-linea.diferencia { color: var(--rojo); font-weight: 600; }
+
+  /* --- Barra inferior fija --- */
+  .barra-inferior {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: white; border-top: 1px solid var(--gris-borde);
+    padding: 12px 16px; box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+  }
+  .barra-inferior .interior { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+  .barra-inferior .total-chico { font-size: 0.72rem; color: var(--gris-texto); }
+  .barra-inferior .total-grande { font-size: 1.3rem; font-weight: 800; color: var(--azul-osc); }
+  .barra-inferior button {
+    flex: 1; background: var(--azul); color: white; border: none; padding: 14px;
+    border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+  .barra-inferior button:disabled { background: #93c5fd; cursor: not-allowed; }
+
+  /* --- Resultado / modal simple --- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+    display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50;
+  }
+  .overlay.visible { display: flex; }
+  .modal {
+    background: white; border-radius: 16px; padding: 26px 22px; max-width: 400px; width: 100%; text-align: center;
+  }
+  .modal .icono { font-size: 2.6rem; margin-bottom: 8px; }
+  .modal h3 { margin: 0 0 6px; font-size: 1.15rem; }
+  .modal p { color: var(--gris-texto); font-size: 0.88rem; margin: 4px 0; word-break: break-all; }
+  .modal.exito h3 { color: var(--verde); }
+  .modal.error h3 { color: var(--rojo); }
+  .modal button {
+    margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 10px;
+    background: var(--azul); color: white; font-weight: 700; cursor: pointer; font-size: 0.95rem;
+  }
+
+  .aviso {
+    background: var(--ambar-fondo); color: #92400e; border-radius: 10px; padding: 10px 12px;
+    font-size: 0.82rem; margin-bottom: 16px;
+  }
+
+  /* --- Escáner de código de barras --- */
+  #tarjeta-escaner {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul));
+    border: none;
+  }
+  #tarjeta-escaner h2 { color: rgba(255,255,255,0.75); }
+  .campo-escaner { position: relative; }
+  .campo-escaner input {
+    width: 100%;
+    padding: 14px 44px 14px 16px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-align: center;
+  }
+  .campo-escaner input:focus {
+    outline: 3px solid rgba(255,255,255,0.5);
+  }
+  .punto-escaner {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    transition: background 0.15s;
+  }
+  .punto-escaner.activo { background: var(--verde); box-shadow: 0 0 8px var(--verde); }
+  .punto-escaner.fallo { background: var(--rojo); box-shadow: 0 0 8px var(--rojo); }
+  .mensaje-escaner {
+    color: white; font-size: 0.8rem; margin-top: 8px; text-align: center; min-height: 1.1em; opacity: 0.9;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Punto de Venta</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+    <a id="enlace-inventario" href="#">Inventario</a>
+    <a id="enlace-catalogo" href="#">Catálogo</a>
+    <a id="enlace-proformas" href="#">Proformas</a>
+    <a id="enlace-reportes" href="#">Reportes</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <div class="aviso" id="aviso-sin-emisor" style="display:none;">
+    Falta indicar el negocio. Abre esta página como <code>/pos?emisorId=TU_ID</code>.
+  </div>
+
+  <div class="tarjeta" id="tarjeta-escaner">
+    <h2>Escanear código de barras</h2>
+    <div class="campo-escaner">
+      <input type="text" id="escaner-input" placeholder="Haz clic aquí y escanea…" autocomplete="off">
+      <span class="punto-escaner" id="punto-escaner"></span>
+    </div>
+    <div class="mensaje-escaner" id="mensaje-escaner"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Agregar producto</h2>
+    <div class="buscador">
+      <input type="text" id="buscador-input" placeholder="Buscar producto por nombre o código…" autocomplete="off">
+      <div class="resultados" id="resultados"></div>
+    </div>
+    <button class="btn-libre" id="btn-mostrar-libre" type="button">+ Agregar línea sin catálogo (producto/servicio libre)</button>
+
+    <div class="form-libre" id="form-libre">
+      <label>Descripción</label>
+      <input type="text" id="libre-descripcion" placeholder="Ej: Servicio de instalación">
+      <div class="fila-doble">
+        <div>
+          <label>Precio unitario</label>
+          <input type="text" id="libre-precio" inputmode="decimal" placeholder="0.00">
+        </div>
+        <div>
+          <label>IVA</label>
+          <select id="libre-iva">
+            <option value="15">15%</option>
+            <option value="5">5%</option>
+            <option value="0">0%</option>
+          </select>
+        </div>
+      </div>
+      <button type="button" id="btn-agregar-libre">Agregar al carrito</button>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Carrito</h2>
+    <div id="lista-carrito">
+      <div class="carrito-vacio">Aún no hay productos en el carrito.</div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="cliente-toggle" id="toggle-cliente">
+      <span id="icono-cliente">▸</span> Datos del cliente (opcional — por defecto: Consumidor Final)
+    </div>
+    <div class="cliente-form" id="form-cliente">
+      <label>Tipo de identificación</label>
+      <select id="cliente-tipo">
+        <option value="05">Cédula</option>
+        <option value="04">RUC</option>
+        <option value="06">Pasaporte</option>
+        <option value="07">Consumidor final</option>
+      </select>
+      <label>Identificación</label>
+      <input type="text" id="cliente-identificacion" placeholder="Número de documento">
+      <label>Razón social / Nombre</label>
+      <input type="text" id="cliente-razon-social" placeholder="Nombre completo">
+      <div class="fila-doble">
+        <div>
+          <label>Email (opcional)</label>
+          <input type="text" id="cliente-email">
+        </div>
+        <div>
+          <label>Teléfono (opcional)</label>
+          <input type="text" id="cliente-telefono">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Forma(s) de pago</h2>
+    <div class="pagos-lista" id="pagos-lista"></div>
+    <button class="btn-agregar-pago" id="btn-agregar-pago" type="button">+ Dividir en otra forma de pago</button>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Resumen</h2>
+    <div class="resumen-linea"><span>Subtotal sin impuestos</span><span id="resumen-subtotal">$0.00</span></div>
+    <div class="resumen-linea"><span>IVA</span><span id="resumen-iva">$0.00</span></div>
+    <div class="resumen-linea"><span>Pagado</span><span id="resumen-pagado">$0.00</span></div>
+    <div class="resumen-linea diferencia" id="resumen-diferencia" style="display:none;"></div>
+    <div class="aviso" id="aviso-bancarizacion" style="display:none; margin-top:10px; margin-bottom:0;"></div>
+    <div class="resumen-linea total"><span>Total</span><span id="resumen-total">$0.00</span></div>
+  </div>
+</div>
+
+<div class="barra-inferior">
+  <div class="interior">
+    <div>
+      <div class="total-chico">Total a cobrar</div>
+      <div class="total-grande" id="barra-total">$0.00</div>
+    </div>
+    <button id="btn-cobrar" type="button" disabled>Cobrar y emitir factura</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal-contenido"></div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId');
+
+// Catálogo oficial del SRI (Tabla 24 - Formas de Pago), agrupado en las
+// dos categorías que exige distinguir la normativa: "sin utilización del
+// sistema financiero" (solo efectivo) y "con utilización del sistema
+// financiero" (todo lo demás — relevante para la bancarización, ver aviso
+// más abajo en el resumen).
+const FORMAS_PAGO_GRUPOS = [
+  {
+    categoria: 'sin_financiero',
+    etiqueta: 'Sin utilización del sistema financiero',
+    formas: [{ codigo: '01', nombre: 'Efectivo', icono: '💵' }],
+  },
+  {
+    categoria: 'con_financiero',
+    etiqueta: 'Con utilización del sistema financiero',
+    formas: [
+      { codigo: '16', nombre: 'Tarjeta de débito', icono: '💳' },
+      { codigo: '19', nombre: 'Tarjeta de crédito', icono: '💳' },
+      { codigo: '20', nombre: 'Transferencia / otros con sistema financiero', icono: '🏦' },
+      { codigo: '17', nombre: 'Dinero electrónico', icono: '📱' },
+      { codigo: '18', nombre: 'Tarjeta prepago', icono: '🎫' },
+      { codigo: '15', nombre: 'Compensación de deudas', icono: '🔄' },
+      { codigo: '21', nombre: 'Endoso de títulos', icono: '📜' },
+    ],
+  },
+];
+const FORMAS_PAGO = FORMAS_PAGO_GRUPOS.flatMap((g) => g.formas.map((f) => ({ ...f, categoria: g.categoria })));
+
+let carrito = []; // { productoId?, descripcion, cantidad, precioUnitario, tarifaIva, stockDisponible? }
+let pagos = [{ formaPagoCodigo: '01', valor: 0 }];
+
+// ---------- Utilidades ----------
+function dinero(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
+function redondear(n) { return Math.round(n * 100) / 100; }
+function formaPagoInfo(codigo) { return FORMAS_PAGO.find((f) => f.codigo === codigo) ?? FORMAS_PAGO[0]; }
+
+const TASA_POR_TARIFA = { '15': 0.15, '5': 0.05, '0': 0 };
+
+function calcularLinea(item) {
+  const base = redondear(item.cantidad * item.precioUnitario);
+  const iva = redondear(base * (TASA_POR_TARIFA[item.tarifaIva] ?? 0));
+  return { base, iva, total: redondear(base + iva) };
+}
+
+function calcularTotales() {
+  let subtotal = 0, iva = 0;
+  for (const item of carrito) {
+    const c = calcularLinea(item);
+    subtotal += c.base;
+    iva += c.iva;
+  }
+  subtotal = redondear(subtotal);
+  iva = redondear(iva);
+  const total = redondear(subtotal + iva);
+  return { subtotal, iva, total };
+}
+
+// ---------- Inicialización ----------
+if (!emisorId) {
+  document.getElementById('aviso-sin-emisor').style.display = 'block';
+  document.getElementById('etiqueta-emisor').textContent = 'Sin negocio configurado';
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-inventario').href = '/inventario?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-catalogo').href = '/productos-admin?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-proformas').href = '/proformas?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-reportes').href = '/reportes?emisorId=' + encodeURIComponent(emisorId);
+}
+
+renderPagos();
+renderCarrito();
+
+// ---------- Buscador de productos ----------
+let productosCache = null;
+let temporizadorBusqueda = null;
+
+async function cargarProductos() {
+  if (productosCache !== null || !emisorId) return productosCache || [];
+  const resp = await fetch('/productos?emisorId=' + encodeURIComponent(emisorId));
+  productosCache = resp.ok ? await resp.json() : [];
+  return productosCache;
+}
+
+// Carga el catálogo de inmediato (no solo al primer clic en el buscador),
+// para que el lector de código de barras responda al instante sin esperar
+// una petición de red en cada escaneo.
+cargarProductos();
+
+document.getElementById('buscador-input').addEventListener('input', (e) => {
+  clearTimeout(temporizadorBusqueda);
+  const texto = e.target.value.trim().toLowerCase();
+  const caja = document.getElementById('resultados');
+  if (!texto) { caja.classList.remove('visible'); return; }
+
+  temporizadorBusqueda = setTimeout(async () => {
+    const productos = await cargarProductos();
+    const filtrados = productos.filter((p) =>
+      p.descripcion.toLowerCase().includes(texto) || p.codigo_principal.toLowerCase().includes(texto)
+    ).slice(0, 12);
+
+    caja.innerHTML = '';
+    if (filtrados.length === 0) {
+      caja.innerHTML = '<div class="resultado-item"><span class="desc">Sin resultados en el catálogo</span></div>';
+    } else {
+      for (const p of filtrados) {
+        const fila = document.createElement('div');
+        fila.className = 'resultado-item';
+        const stockBajo = Number(p.stock_actual) <= 0 ? '<div class="stock-bajo">Sin stock</div>' : '';
+        fila.innerHTML = `<div><div class="desc">${p.descripcion}</div>${stockBajo}</div><div class="precio">${dinero(p.precio_venta)}</div>`;
+        fila.addEventListener('click', () => {
+          agregarAlCarrito({
+            productoId: p.id,
+            descripcion: p.descripcion,
+            cantidad: 1,
+            precioUnitario: Number(p.precio_venta),
+            tarifaIva: p.tarifa_iva,
+            stockDisponible: Number(p.stock_actual),
+          });
+          document.getElementById('buscador-input').value = '';
+          caja.classList.remove('visible');
+        });
+        caja.appendChild(fila);
+      }
+    }
+    caja.classList.add('visible');
+  }, 200);
+});
+
+// ---------- Línea libre ----------
+document.getElementById('btn-mostrar-libre').addEventListener('click', () => {
+  document.getElementById('form-libre').classList.toggle('visible');
+});
+
+document.getElementById('btn-agregar-libre').addEventListener('click', () => {
+  const descripcion = document.getElementById('libre-descripcion').value.trim();
+  const precio = parseFloat(document.getElementById('libre-precio').value);
+  const iva = document.getElementById('libre-iva').value;
+
+  if (!descripcion || isNaN(precio) || precio <= 0) {
+    alert('Completa la descripción y un precio válido.');
+    return;
+  }
+
+  agregarAlCarrito({ descripcion, cantidad: 1, precioUnitario: precio, tarifaIva: iva });
+
+  document.getElementById('libre-descripcion').value = '';
+  document.getElementById('libre-precio').value = '';
+  document.getElementById('form-libre').classList.remove('visible');
+});
+
+// ---------- Carrito ----------
+function agregarAlCarrito(item) {
+  const existente = carrito.find((c) => c.productoId && c.productoId === item.productoId);
+  if (existente) {
+    existente.cantidad += 1;
+  } else {
+    carrito.push(item);
+  }
+  renderCarrito();
+}
+
+function renderCarrito() {
+  const cont = document.getElementById('lista-carrito');
+  if (carrito.length === 0) {
+    cont.innerHTML = '<div class="carrito-vacio">Aún no hay productos en el carrito.</div>';
+  } else {
+    cont.innerHTML = '';
+    carrito.forEach((item, idx) => {
+      const c = calcularLinea(item);
+      const fila = document.createElement('div');
+      fila.className = 'linea-carrito';
+      fila.innerHTML = `
+        <div class="detalle">
+          <div class="nombre">${item.descripcion}</div>
+          <div class="meta">${dinero(item.precioUnitario)} c/u · IVA ${item.tarifaIva}%</div>
+          <div class="cantidad-control">
+            <button type="button" data-accion="restar" data-idx="${idx}">−</button>
+            <span>${item.cantidad}</span>
+            <button type="button" data-accion="sumar" data-idx="${idx}">+</button>
+          </div>
+        </div>
+        <div class="totales-linea">
+          <div class="precio-total">${dinero(c.total)}</div>
+          <div class="quitar" data-accion="quitar" data-idx="${idx}">Quitar</div>
+        </div>
+      `;
+      cont.appendChild(fila);
+    });
+  }
+
+  cont.querySelectorAll('[data-accion]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const idx = Number(el.dataset.idx);
+      const accion = el.dataset.accion;
+      if (accion === 'sumar') carrito[idx].cantidad += 1;
+      if (accion === 'restar') {
+        carrito[idx].cantidad -= 1;
+        if (carrito[idx].cantidad <= 0) carrito.splice(idx, 1);
+      }
+      if (accion === 'quitar') carrito.splice(idx, 1);
+      renderCarrito();
+    });
+  });
+
+  actualizarResumen();
+}
+
+// ---------- Cliente ----------
+document.getElementById('toggle-cliente').addEventListener('click', () => {
+  const form = document.getElementById('form-cliente');
+  form.classList.toggle('visible');
+  document.getElementById('icono-cliente').textContent = form.classList.contains('visible') ? '▾' : '▸';
+});
+
+// ---------- Formas de pago ----------
+function renderPagos() {
+  const cont = document.getElementById('pagos-lista');
+  cont.innerHTML = '';
+  pagos.forEach((pago, idx) => {
+    const fila = document.createElement('div');
+    fila.className = 'pago-fila';
+    const opciones = FORMAS_PAGO_GRUPOS.map((grupo) => {
+      const items = grupo.formas.map((f) =>
+        `<option value="${f.codigo}" ${f.codigo === pago.formaPagoCodigo ? 'selected' : ''}>${f.icono} ${f.nombre}</option>`
+      ).join('');
+      return `<optgroup label="${grupo.etiqueta}">${items}</optgroup>`;
+    }).join('');
+
+    const info = formaPagoInfo(pago.formaPagoCodigo);
+    const badgeClase = info.categoria === 'sin_financiero' ? 'sin-financiero' : 'con-financiero';
+    const badgeTexto = info.categoria === 'sin_financiero' ? 'Sin sistema financiero' : 'Con sistema financiero';
+
+    fila.innerHTML = `
+      <div class="pago-fila-principal">
+        <span class="pago-icono">${info.icono}</span>
+        <select data-idx="${idx}" class="select-forma">${opciones}</select>
+        <div class="pago-valor-envoltorio">
+          <span class="pago-signo">$</span>
+          <input type="text" inputmode="decimal" data-idx="${idx}" class="input-valor" placeholder="0.00" value="${pago.valor || ''}">
+        </div>
+        ${pagos.length > 1 ? `<span class="quitar-pago" data-idx="${idx}" title="Quitar esta forma de pago">✕</span>` : ''}
+      </div>
+      <span class="badge-financiero ${badgeClase}">${badgeTexto}</span>
+    `;
+    cont.appendChild(fila);
+  });
+
+  cont.querySelectorAll('.select-forma').forEach((el) => {
+    el.addEventListener('change', (e) => {
+      pagos[e.target.dataset.idx].formaPagoCodigo = e.target.value;
+      renderPagos();
+      actualizarResumen();
+    });
+  });
+  cont.querySelectorAll('.input-valor').forEach((el) => {
+    el.addEventListener('input', (e) => {
+      pagos[e.target.dataset.idx].valor = parseFloat(e.target.value) || 0;
+      actualizarResumen();
+    });
+  });
+  cont.querySelectorAll('.quitar-pago').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      pagos.splice(Number(e.target.dataset.idx), 1);
+      renderPagos();
+      actualizarResumen();
+    });
+  });
+}
+
+document.getElementById('btn-agregar-pago').addEventListener('click', () => {
+  pagos.push({ formaPagoCodigo: '16', valor: 0 });
+  renderPagos();
+});
+
+// ---------- Resumen y validación ----------
+function actualizarResumen() {
+  const { subtotal, iva, total } = calcularTotales();
+  const pagado = redondear(pagos.reduce((acc, p) => acc + (p.valor || 0), 0));
+
+  document.getElementById('resumen-subtotal').textContent = dinero(subtotal);
+  document.getElementById('resumen-iva').textContent = dinero(iva);
+  document.getElementById('resumen-pagado').textContent = dinero(pagado);
+  document.getElementById('resumen-total').textContent = dinero(total);
+  document.getElementById('barra-total').textContent = dinero(total);
+
+  const diferenciaEl = document.getElementById('resumen-diferencia');
+  const diferencia = redondear(total - pagado);
+  if (carrito.length > 0 && Math.abs(diferencia) > 0.01) {
+    diferenciaEl.style.display = 'flex';
+    diferenciaEl.innerHTML = diferencia > 0
+      ? `<span>Falta por cubrir</span><span>${dinero(diferencia)}</span>`
+      : `<span>Sobrepago</span><span>${dinero(Math.abs(diferencia))}</span>`;
+  } else {
+    diferenciaEl.style.display = 'none';
+  }
+
+  const listo = carrito.length > 0 && Math.abs(diferencia) <= 0.01 && !!emisorId;
+  document.getElementById('btn-cobrar').disabled = !listo;
+
+  // Aviso de bancarización (normativa vigente desde dic. 2023): ventas
+  // mayores a $500 pagadas sin usar el sistema financiero (efectivo,
+  // código 01) no son deducibles para el comprador ni dan derecho a
+  // crédito tributario de IVA. Es solo informativo — no bloquea la venta.
+  const avisoBancarizacion = document.getElementById('aviso-bancarizacion');
+  const pagadoEnEfectivo = redondear(pagos.filter((p) => p.formaPagoCodigo === '01').reduce((acc, p) => acc + (p.valor || 0), 0));
+  if (total > 500 && pagadoEnEfectivo > 0) {
+    avisoBancarizacion.style.display = 'block';
+    avisoBancarizacion.textContent =
+      `Esta venta supera $500 y tiene ${dinero(pagadoEnEfectivo)} en efectivo — por normativa de bancarización, ` +
+      `esa parte no será deducible ni dará crédito tributario de IVA al comprador. Si el cliente lo necesita, sugiérele pagar con tarjeta o transferencia.`;
+  } else {
+    avisoBancarizacion.style.display = 'none';
+  }
+}
+
+// Si solo hay una forma de pago, autocompletar su valor con el total (comodidad).
+function autocompletarPagoUnico() {
+  if (pagos.length === 1) {
+    const { total } = calcularTotales();
+    pagos[0].valor = total;
+    renderPagos();
+    actualizarResumen();
+  }
+}
+
+// ---------- Cobrar ----------
+document.getElementById('btn-cobrar').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-cobrar');
+  boton.disabled = true;
+  boton.textContent = 'Procesando…';
+
+  const clienteVisible = document.getElementById('form-cliente').classList.contains('visible');
+  let cliente = undefined;
+  if (clienteVisible) {
+    const identificacion = document.getElementById('cliente-identificacion').value.trim();
+    const razonSocial = document.getElementById('cliente-razon-social').value.trim();
+    if (identificacion && razonSocial) {
+      cliente = {
+        tipoIdentificacion: document.getElementById('cliente-tipo').value,
+        identificacion,
+        razonSocial,
+        email: document.getElementById('cliente-email').value.trim() || undefined,
+        telefono: document.getElementById('cliente-telefono').value.trim() || undefined,
+      };
+    }
+  }
+
+  const cuerpo = {
+    emisorId,
+    cliente,
+    items: carrito.map((item) => item.productoId
+      ? { productoId: item.productoId, cantidad: item.cantidad }
+      : { descripcionLibre: item.descripcion, precioUnitarioLibre: item.precioUnitario, tarifaIvaLibre: item.tarifaIva, cantidad: item.cantidad }
+    ),
+    pagos: pagos.filter((p) => p.valor > 0),
+  };
+
+  try {
+    const resp = await fetch('/pos/venta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+    });
+    const datos = await resp.json();
+
+    if (!resp.ok) {
+      mostrarModal('error', 'No se pudo completar la venta', datos.error + (datos.detalle ? ' — ' + JSON.stringify(datos.detalle) : ''));
+    } else if (datos.estado === 'AUTORIZADO') {
+      mostrarModal('exito', '¡Factura autorizada!', `N.° autorización: ${datos.numeroAutorizacion}\nSecuencial: ${datos.secuencial}\nTotal: ${dinero(datos.importeTotal)}`, datos.comprobanteId);
+      carrito = [];
+      pagos = [{ formaPagoCodigo: '01', valor: 0 }];
+      renderCarrito();
+      renderPagos();
+    } else {
+      mostrarModal('error', `Estado: ${datos.estado}`, `El SRI no autorizó el comprobante. Comprobante guardado: ${datos.comprobanteId}`);
+    }
+  } catch (err) {
+    mostrarModal('error', 'Error de conexión', err.message);
+  } finally {
+    boton.textContent = 'Cobrar y emitir factura';
+    actualizarResumen();
+  }
+});
+
+function mostrarModal(tipo, titulo, texto, comprobanteId) {
+  const overlay = document.getElementById('overlay');
+  const contenido = document.getElementById('modal-contenido');
+  contenido.className = 'modal ' + tipo;
+  const botonRide = comprobanteId
+    ? `<a href="/comprobantes/${comprobanteId}/ride" target="_blank" style="display:block; text-decoration:none; margin-top:10px; background:#1e3a8a; color:white; padding:12px; border-radius:10px; font-weight:700;">Ver factura (PDF)</a>`
+    : '';
+  contenido.innerHTML = `
+    <div class="icono">${tipo === 'exito' ? '✅' : '⚠️'}</div>
+    <h3>${titulo}</h3>
+    <p style="white-space: pre-line;">${texto}</p>
+    ${botonRide}
+    <button id="btn-cerrar-modal">Cerrar</button>
+  `;
+  overlay.classList.add('visible');
+  document.getElementById('btn-cerrar-modal').addEventListener('click', () => overlay.classList.remove('visible'));
+}
+
+// Autocompletar el pago único cada vez que cambia el carrito, para agilizar el flujo más común (pago completo en una sola forma).
+const observarCarrito = new MutationObserver(() => {});
+document.getElementById('lista-carrito').addEventListener('click', () => setTimeout(autocompletarPagoUnico, 0));
+
+// ---------- Lector de código de barras ----------
+// La mayoría de lectores USB/Bluetooth funcionan como un teclado: "escriben"
+// el código muy rápido y terminan con Enter. Este campo dedicado los recibe;
+// no hace falta software adicional ni configuración especial en el lector.
+const escanerInput = document.getElementById('escaner-input');
+const puntoEscaner = document.getElementById('punto-escaner');
+const mensajeEscaner = document.getElementById('mensaje-escaner');
+
+function enfocarEscaner() {
+  escanerInput.focus();
+}
+enfocarEscaner();
+
+function marcarEscaner(estado) {
+  puntoEscaner.className = 'punto-escaner' + (estado ? ' ' + estado : '');
+  if (estado) setTimeout(() => { puntoEscaner.className = 'punto-escaner'; }, 700);
+}
+
+async function procesarCodigoEscaneado(codigo) {
+  const texto = codigo.trim();
+  if (!texto) return;
+
+  const productos = await cargarProductos();
+  const encontrado = productos.find(
+    (p) => p.codigo_principal.toLowerCase() === texto.toLowerCase() ||
+           (p.codigo_auxiliar && p.codigo_auxiliar.toLowerCase() === texto.toLowerCase())
+  );
+
+  if (encontrado) {
+    if (Number(encontrado.stock_actual) <= 0) {
+      marcarEscaner('fallo');
+      mensajeEscaner.textContent = `"${encontrado.descripcion}" está sin stock — no se agregó.`;
+    } else {
+      agregarAlCarrito({
+        productoId: encontrado.id,
+        descripcion: encontrado.descripcion,
+        cantidad: 1,
+        precioUnitario: Number(encontrado.precio_venta),
+        tarifaIva: encontrado.tarifa_iva,
+        stockDisponible: Number(encontrado.stock_actual),
+      });
+      marcarEscaner('activo');
+      mensajeEscaner.textContent = `Agregado: ${encontrado.descripcion}`;
+    }
+  } else {
+    marcarEscaner('fallo');
+    mensajeEscaner.innerHTML = `Código "${texto}" no está en el catálogo. <span id="link-agregar-libre" style="text-decoration:underline; cursor:pointer;">Agregarlo como línea libre</span> o regístralo en el catálogo.`;
+    const enlace = document.getElementById('link-agregar-libre');
+    if (enlace) {
+      enlace.addEventListener('click', () => {
+        document.getElementById('form-libre').classList.add('visible');
+        document.getElementById('libre-descripcion').value = 'Código: ' + texto;
+        document.getElementById('libre-descripcion').focus();
+      });
+    }
+  }
+
+  escanerInput.value = '';
+  setTimeout(() => { mensajeEscaner.textContent = ''; }, 4000);
+}
+
+escanerInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    procesarCodigoEscaneado(escanerInput.value);
+  }
+});
+
+// El foco puede perderse al hacer clic en otras partes del carrito (sumar,
+// restar cantidad, quitar). Se devuelve el foco al campo del escáner en
+// esos casos para poder seguir escaneando sin clic adicional — pero NO en
+// la sección de formas de pago, porque ahí el cajero necesita escribir en
+// los campos de valor sin que el foco se le escape a mitad de tecleo.
+['lista-carrito'].forEach((id) => {
+  document.getElementById(id).addEventListener('click', () => setTimeout(enfocarEscaner, 150));
+});
+</script>
+</body>
+</html>
