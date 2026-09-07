@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuarios — Facturador Electrónico EC</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626; --rojo-fondo: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 700px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 16px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gris-texto); margin-top: 14px; margin-bottom: 5px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="email"], input[type="password"], select {
+    width: 100%; padding: 11px 13px; border: 1px solid var(--gris-borde); border-radius: 9px; font-size: 0.95rem;
+  }
+  .fila-doble { display: flex; gap: 12px; }
+  .fila-doble > div { flex: 1; }
+  button.principal {
+    width: 100%; background: var(--azul); color: white; border: none; padding: 13px;
+    border-radius: 9px; font-size: 0.95rem; font-weight: 700; margin-top: 16px; cursor: pointer;
+  }
+  .mensaje { border-radius: 9px; padding: 11px 13px; margin-top: 14px; font-size: 0.85rem; display: none; }
+  .mensaje.exito { background: var(--verde-fondo); color: #166534; display: block; }
+  .mensaje.error { background: var(--rojo-fondo); color: #991b1b; display: block; }
+
+  .fila-usuario { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .fila-usuario:last-child { border-bottom: none; }
+  .fila-usuario .email { font-size: 0.9rem; font-weight: 600; }
+  .fila-usuario select { width: auto; padding: 6px 10px; font-size: 0.82rem; }
+  button.quitar { background: none; border: 1px solid var(--rojo); color: var(--rojo); padding: 5px 10px; border-radius: 20px; font-size: 0.76rem; cursor: pointer; }
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 24px 0; }
+  .ayuda { font-size: 0.76rem; color: var(--gris-texto); margin-top: 5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Usuarios del negocio</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <div class="tarjeta">
+    <h2>Agregar usuario</h2>
+    <label>Correo</label>
+    <input type="email" id="u-email" placeholder="correo@ejemplo.com">
+    <div class="fila-doble">
+      <div>
+        <label>Contraseña</label>
+        <input type="password" id="u-password" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div>
+        <label>Rol</label>
+        <select id="u-rol">
+          <option value="cajero">Cajero (solo punto de venta)</option>
+          <option value="contador">Contador (todo menos usuarios)</option>
+          <option value="admin">Administrador (acceso total)</option>
+        </select>
+      </div>
+    </div>
+    <div class="ayuda">Si el correo ya tiene cuenta en otro negocio, se reutiliza la misma cuenta — solo se le da acceso a este negocio también.</div>
+    <button class="principal" id="btn-agregar" type="button">Agregar usuario</button>
+    <div class="mensaje" id="mensaje-form"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Usuarios con acceso</h2>
+    <div id="lista-usuarios"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId') || localStorage.getItem('facturador_emisor_id') || window.__FACTURADOR_EMISOR_ID__ || '';
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+async function cargarUsuarios() {
+  const cont = document.getElementById('lista-usuarios');
+  if (!emisorId) { cont.innerHTML = '<div class="vacio">Falta emisorId en la URL.</div>'; return; }
+
+  const resp = await fetch('/auth/usuarios?emisorId=' + encodeURIComponent(emisorId));
+  if (!resp.ok) { cont.innerHTML = '<div class="vacio">No se pudo cargar la lista (¿tienes permiso de administrador?).</div>'; return; }
+  const usuarios = await resp.json();
+
+  if (usuarios.length === 0) {
+    cont.innerHTML = '<div class="vacio">Sin usuarios todavía.</div>';
+    return;
+  }
+
+  cont.innerHTML = usuarios.map((u) => `
+    <div class="fila-usuario">
+      <div class="email">${u.email}</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select data-id="${u.userId}" class="select-rol">
+          <option value="cajero" ${u.rol === 'cajero' ? 'selected' : ''}>Cajero</option>
+          <option value="contador" ${u.rol === 'contador' ? 'selected' : ''}>Contador</option>
+          <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Administrador</option>
+        </select>
+        <button class="quitar" data-id="${u.userId}">Quitar</button>
+      </div>
+    </div>
+  `).join('');
+
+  cont.querySelectorAll('.select-rol').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      await fetch('/auth/usuarios/rol', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emisorId, userId: sel.dataset.id, rol: sel.value }),
+      });
+    });
+  });
+  cont.querySelectorAll('.quitar').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Quitar el acceso de este usuario a este negocio?')) return;
+      await fetch('/auth/usuarios/rol', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emisorId, userId: btn.dataset.id, rol: null }),
+      });
+      await cargarUsuarios();
+    });
+  });
+}
+
+document.getElementById('btn-agregar').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-agregar');
+  const mensaje = document.getElementById('mensaje-form');
+  mensaje.className = 'mensaje';
+
+  const email = document.getElementById('u-email').value.trim();
+  const password = document.getElementById('u-password').value;
+  const rol = document.getElementById('u-rol').value;
+
+  if (!email || !password) { mensaje.className = 'mensaje error'; mensaje.textContent = 'Completa correo y contraseña.'; return; }
+  if (password.length < 6) { mensaje.className = 'mensaje error'; mensaje.textContent = 'La contraseña debe tener al menos 6 caracteres.'; return; }
+
+  boton.disabled = true; boton.textContent = 'Agregando…';
+  try {
+    const resp = await fetch('/auth/usuarios', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emisorId, email, password, rol }),
+    });
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = 'Usuario agregado correctamente.';
+    document.getElementById('u-email').value = '';
+    document.getElementById('u-password').value = '';
+    await cargarUsuarios();
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Agregar usuario';
+  }
+});
+
+cargarUsuarios();
+</script>
+</body>
+</html>
