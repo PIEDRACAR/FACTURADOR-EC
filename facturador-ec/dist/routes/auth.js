@@ -1,0 +1,98 @@
+import { verificarCredenciales, crearSesion, cerrarSesion, obtenerSesion, obtenerNegociosDeUsuario, agregarUsuarioANegocio, crearOEncontrarUsuario, } from '../auth/sesiones.js';
+import { supabase } from '../db/supabase.js';
+import { env } from '../config/env.js';
+const NOMBRE_COOKIE = 'sesion';
+const COOKIE_OPTS = { path: '/', httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 };
+export async function registrarRutasAuth(app) {
+    app.post('/auth/login', async (request, reply) => {
+        const { email, password } = request.body ?? {};
+        if (!email || !password)
+            return reply.status(400).send({ error: 'Correo y contraseña son obligatorios.' });
+        try {
+            const usuario = await verificarCredenciales(email, password);
+            const token = await crearSesion(usuario.userId);
+            reply.setCookie(NOMBRE_COOKIE, token, COOKIE_OPTS);
+            const negocios = await obtenerNegociosDeUsuario(usuario.userId);
+            return reply.send({ ok: true, negocios });
+        }
+        catch (err) {
+            return reply.status(401).send({ error: err instanceof Error ? err.message : 'No se pudo iniciar sesión.' });
+        }
+    });
+    app.post('/auth/logout', async (request, reply) => {
+        const token = request.cookies?.[NOMBRE_COOKIE];
+        if (token)
+            await cerrarSesion(token);
+        reply.clearCookie(NOMBRE_COOKIE, { path: '/' });
+        return reply.send({ ok: true });
+    });
+    /** Con quién estamos hablando y a qué negocios tiene acceso — lo usa cada página al cargar. */
+    app.get('/auth/yo', async (request, reply) => {
+        const token = request.cookies?.[NOMBRE_COOKIE];
+        if (!token)
+            return reply.status(401).send({ error: 'No hay sesión activa.' });
+        const sesion = await obtenerSesion(token);
+        if (!sesion)
+            return reply.status(401).send({ error: 'La sesión expiró o no es válida.' });
+        const negocios = await obtenerNegociosDeUsuario(sesion.userId);
+        return reply.send({ userId: sesion.userId, negocios });
+    });
+    /** Lista los usuarios (con su rol) de un negocio — solo un admin puede verlo (verificado por el hook global). */
+    app.get('/auth/usuarios', async (request, reply) => {
+        const { emisorId } = request.query;
+        if (!emisorId)
+            return reply.status(400).send({ error: 'Falta el parámetro emisorId.' });
+        const { data, error } = await supabase.from('usuarios_emisor').select('user_id, rol').eq('emisor_id', emisorId);
+        if (error)
+            return reply.status(500).send({ error: error.message });
+        const usuarios = await Promise.all((data ?? []).map(async (fila) => {
+            const resp = await fetch(`${env.supabaseUrl}/auth/v1/admin/users/${fila.user_id}`, {
+                headers: { apikey: env.supabaseServiceRoleKey, Authorization: `Bearer ${env.supabaseServiceRoleKey}` },
+            });
+            const datos = resp.ok ? (await resp.json()) : {};
+            return { userId: fila.user_id, rol: fila.rol, email: datos.email ?? '(correo no disponible)' };
+        }));
+        return reply.send(usuarios);
+    });
+    /** Invita (o agrega) un usuario a un negocio con un rol — solo un admin puede hacerlo. */
+    app.post('/auth/usuarios', async (request, reply) => {
+        const { emisorId, email, password, rol } = request.body ?? {};
+        if (!emisorId || !email || !password || !rol) {
+            return reply.status(400).send({ error: 'Faltan campos obligatorios: emisorId, email, password, rol.' });
+        }
+        if (!['admin', 'contador', 'cajero'].includes(rol)) {
+            return reply.status(400).send({ error: "El rol debe ser 'admin', 'contador' o 'cajero'." });
+        }
+        if (password.length < 6) {
+            return reply.status(400).send({ error: 'La contraseña debe tener al menos 6 caracteres.' });
+        }
+        try {
+            const userId = await crearOEncontrarUsuario(email, password);
+            await agregarUsuarioANegocio(userId, emisorId, rol);
+            return reply.status(201).send({ ok: true, userId });
+        }
+        catch (err) {
+            return reply.status(500).send({ error: err instanceof Error ? err.message : 'No se pudo agregar el usuario.' });
+        }
+    });
+    /** Cambia el rol de un usuario dentro de un negocio, o lo quita (rol=null). */
+    app.patch('/auth/usuarios/rol', async (request, reply) => {
+        const { emisorId, userId, rol } = request.body ?? {};
+        if (!emisorId || !userId)
+            return reply.status(400).send({ error: 'Faltan emisorId o userId.' });
+        if (rol === null) {
+            const { error } = await supabase.from('usuarios_emisor').delete().eq('emisor_id', emisorId).eq('user_id', userId);
+            if (error)
+                return reply.status(500).send({ error: error.message });
+            return reply.send({ ok: true });
+        }
+        if (!rol || !['admin', 'contador', 'cajero'].includes(rol)) {
+            return reply.status(400).send({ error: "El rol debe ser 'admin', 'contador' o 'cajero'." });
+        }
+        const { error } = await supabase.from('usuarios_emisor').update({ rol }).eq('emisor_id', emisorId).eq('user_id', userId);
+        if (error)
+            return reply.status(500).send({ error: error.message });
+        return reply.send({ ok: true });
+    });
+}
+//# sourceMappingURL=auth.js.map
