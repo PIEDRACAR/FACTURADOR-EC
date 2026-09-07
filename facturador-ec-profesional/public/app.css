@@ -1,0 +1,74 @@
+/* Facturador EC — capa visual global profesional */
+:root {
+  --ec-primary:#2563eb; --ec-primary-dark:#1e3a8a; --ec-primary-soft:#eff6ff;
+  --ec-bg:#f4f7fb; --ec-card:#ffffff; --ec-border:#e5e7eb; --ec-text:#172033;
+  --ec-muted:#64748b; --ec-success:#16a34a; --ec-warning:#d97706; --ec-danger:#dc2626;
+  --ec-radius:16px;
+}
+html { background:var(--ec-bg); }
+body { background:var(--ec-bg) !important; color:var(--ec-text); }
+header {
+  background:linear-gradient(135deg,#0f2f73 0%,#2563eb 55%,#3b82f6 100%) !important;
+  border-bottom:1px solid rgba(255,255,255,.12); box-shadow:0 8px 28px rgba(15,47,115,.16) !important;
+}
+header h1 { letter-spacing:-.02em; }
+header .nav { gap:7px !important; align-items:center; }
+header .nav a {
+  background:rgba(255,255,255,.08); backdrop-filter:blur(8px); transition:.18s ease;
+  border-color:rgba(255,255,255,.25) !important; padding:6px 11px !important;
+}
+header .nav a:hover { background:rgba(255,255,255,.18); transform:translateY(-1px); }
+.contenedor { max-width:1180px !important; }
+.tarjeta {
+  border-radius:var(--ec-radius) !important; border-color:var(--ec-border) !important;
+  box-shadow:0 8px 28px rgba(15,23,42,.045) !important;
+}
+button, .btn, a.descarga, .descargas a { transition:.16s ease; }
+button:hover, .descargas a:hover { transform:translateY(-1px); filter:brightness(1.02); }
+input, select, textarea { outline:none; transition:border-color .15s, box-shadow .15s; }
+input:focus, select:focus, textarea:focus { border-color:#60a5fa !important; box-shadow:0 0 0 3px rgba(37,99,235,.10); }
+.pestanas { box-shadow:0 6px 20px rgba(15,23,42,.04); position:sticky; top:86px; z-index:5; }
+.pestana { min-width:100px; }
+.tabla-scroll { border:1px solid var(--ec-border); border-radius:12px; background:#fff; }
+table.tabla-reporte { margin-top:0 !important; }
+table.tabla-reporte thead th { background:#f8fafc; position:sticky; top:0; z-index:1; }
+.ec-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 14px; }
+.ec-toolbar .ec-toolbar-title { margin-right:auto; font-size:.8rem; font-weight:800; color:var(--ec-muted); text-transform:uppercase; letter-spacing:.06em; }
+.ec-export {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 11px;
+  border:1px solid var(--ec-border); border-radius:10px; background:#fff; color:#334155;
+  text-decoration:none; font-size:.78rem; font-weight:800; cursor:pointer;
+}
+.ec-export:hover { background:var(--ec-primary-soft); border-color:#bfdbfe; color:#1d4ed8; }
+.ec-export.excel { color:#166534; background:#f0fdf4; border-color:#bbf7d0; }
+.ec-export.pdf { color:#991b1b; background:#fff1f2; border-color:#fecdd3; }
+.ec-action {
+  border:0; border-radius:8px; padding:7px 9px; background:var(--ec-primary-soft); color:#1d4ed8;
+  font-size:.74rem; font-weight:800; cursor:pointer;
+}
+.ec-action:hover { background:#dbeafe; }
+.ec-action.email { background:#ecfdf5; color:#047857; }
+.ec-action.email:hover { background:#d1fae5; }
+.ec-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:.68rem; font-weight:800; }
+.ec-badge.ok { background:#dcfce7; color:#166534; }
+.ec-badge.error { background:#fee2e2; color:#991b1b; }
+.ec-modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.48); display:none; align-items:center; justify-content:center; padding:18px; z-index:1000; backdrop-filter:blur(4px); }
+.ec-modal-backdrop.visible { display:flex; }
+.ec-modal { width:min(480px,100%); background:#fff; border-radius:18px; box-shadow:0 25px 70px rgba(15,23,42,.25); padding:22px; }
+.ec-modal h3 { margin:0 0 6px; font-size:1.05rem; }
+.ec-modal p { margin:0 0 16px; color:var(--ec-muted); font-size:.84rem; line-height:1.5; }
+.ec-modal .acciones { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+.ec-modal button { border:0; border-radius:9px; padding:10px 14px; font-weight:800; cursor:pointer; }
+.ec-modal .cancelar { background:#f1f5f9; color:#475569; }
+.ec-modal .confirmar { background:#2563eb; color:#fff; }
+@media(max-width:700px){
+  .pestanas { top:0; position:relative; overflow:auto; }
+  .pestana { min-width:88px; }
+  .ec-toolbar .ec-toolbar-title { width:100%; }
+  .ec-export { flex:1; min-width:120px; }
+}
+@media print {
+  header, .ec-toolbar, .pestanas { display:none !important; }
+  body { background:#fff !important; }
+  .tarjeta { box-shadow:none !important; border:0 !important; }
+}
