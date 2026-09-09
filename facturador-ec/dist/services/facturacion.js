@@ -1,0 +1,404 @@
+import { FacturacionElectronicaEC } from 'facturacion-electronica-ec';
+import { generateClaveAcceso, generateCodigoNumerico, getCodDoc, validateXmlAgainstXsd, } from 'facturacion-electronica-ec';
+import { supabase } from '../db/supabase.js';
+import { SupabaseSequenceProvider } from '../sequence/supabaseSequenceProvider.js';
+import { descifrar, descifrarTexto, pgByteaABuffer } from '../crypto/secrets.js';
+import { obtenerEmisor, obtenerPuntoEmisionActivo } from '../db/consultas.js';
+import { archivarComprobanteAutorizado } from './archivoComprobante.js';
+import { registrarAuditoria } from './auditoria.js';
+function extraerMensajesSri(respuesta) {
+    const r = (respuesta ?? {});
+    const directos = Array.isArray(r.mensajes) ? r.mensajes : [];
+    const comprobante = r.comprobantes?.comprobante;
+    const comprobantes = Array.isArray(comprobante) ? comprobante : comprobante ? [comprobante] : [];
+    const anidados = comprobantes.flatMap((c) => Array.isArray(c.mensajes) ? c.mensajes : []);
+    return [...directos, ...anidados]
+        .filter((m) => m && typeof m === 'object')
+        .map((m) => ({
+        identificador: m.identificador ? String(m.identificador) : undefined,
+        mensaje: m.mensaje ? String(m.mensaje) : undefined,
+        informacionAdicional: m.informacionAdicional ? String(m.informacionAdicional) : undefined,
+        tipo: m.tipo ? String(m.tipo) : undefined,
+    }));
+}
+function normalizarEstadoSri(estado) {
+    const valor = String(estado ?? '').trim().toUpperCase();
+    return valor === 'DEVUELTO' ? 'DEVUELTA' : valor;
+}
+function formatearMensajesSri(respuesta) {
+    return extraerMensajesSri(respuesta)
+        .map((m) => {
+        const codigo = m.identificador ? `${m.identificador}: ` : '';
+        const texto = m.mensaje ?? '';
+        const adicional = m.informacionAdicional ? ` — ${m.informacionAdicional}` : '';
+        return `${codigo}${texto}${adicional}`.trim();
+    })
+        .filter(Boolean)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .join('; ');
+}
+/**
+ * Nombre EXACTO del campo que exige la Resolución NAC-DGERCGC26-00000027
+ * (art. 5) en la sección de información adicional de cada comprobante.
+ * Confirmado por múltiples fuentes profesionales citando la resolución de
+ * forma literal — no es una decisión de diseño nuestra, es el texto legal.
+ *
+ * Si el SRI publica una Ficha Técnica que use un nombre distinto, este es
+ * el único lugar que hay que tocar.
+ */
+const NOMBRE_CAMPO_RUC_PROVEEDOR = 'RUC Proveedor';
+/**
+ * RUC del proveedor del sistema de facturación electrónica — en este caso,
+ * el propio contribuyente que construyó y opera este sistema para sí mismo
+ * (uso interno, no comercializado a terceros). Configurable por variable
+ * de entorno para el día en que este sistema sí se ofrezca a otros
+ * contribuyentes con un RUC de proveedor distinto al del emisor.
+ */
+async function obtenerRucProveedorSistema(emisorId) {
+    // Configuración central: el proveedor del sistema se administra en Railway, no por negocio.
+    const central = process.env.RUC_PROVEEDOR_FACTURACION?.trim();
+    if (central)
+        return central;
+    const { data } = await supabase.from('configuracion_sistema').select('ruc_proveedor_facturacion').eq('emisor_id', emisorId).maybeSingle();
+    return data?.ruc_proveedor_facturacion ? String(data.ruc_proveedor_facturacion).trim() : null;
+}
+/**
+ * Este servicio arma una instancia de FacturacionElectronicaEC "al vuelo" por
+ * cada emisor, en vez de una sola instancia global — porque el sistema es
+ * multiempresa (ver sección 12 de la arquitectura): cada emisor tiene su
+ * propio RUC, su propio establecimiento/punto de emisión y, sobre todo, su
+ * propio certificado .p12. No se puede compartir una sola instancia entre
+ * distintos negocios.
+ *
+ * SEGURIDAD: el .p12 y su contraseña viven CIFRADOS en las columnas
+ * `certificados.p12_cifrado` y `certificados.p12_password_cifrado`
+ * (ver src/crypto/secrets.ts) y se descifran únicamente aquí, en memoria,
+ * en el backend — nunca se exponen al navegador ni quedan en texto plano
+ * en ninguna variable de entorno por cliente. Esto reemplaza el esquema
+ * anterior basado en P12_PASSWORD__<alias>/P12_BASE64__<alias>, que exigía
+ * tocar Railway a mano por cada negocio nuevo registrado.
+ */
+async function construirFacturadorParaEmisor(emisorId) {
+    const emisor = await obtenerEmisor(emisorId);
+    const puntoEmision = await obtenerPuntoEmisionActivo(emisorId);
+    const { data: certificado, error: errorCert } = await supabase
+        .from('certificados')
+        .select('*')
+        .eq('emisor_id', emisorId)
+        .eq('activo', true)
+        .limit(1)
+        .single();
+    if (errorCert || !certificado) {
+        throw new Error(`El emisor ${emisorId} no tiene un certificado activo configurado.`);
+    }
+    if (new Date(certificado.fecha_expiracion) < new Date()) {
+        throw new Error(`El certificado activo del emisor ${emisorId} está vencido ` +
+            `(venció el ${certificado.fecha_expiracion}). No se puede firmar.`);
+    }
+    if (!certificado.p12_cifrado || !certificado.p12_password_cifrado) {
+        throw new Error(`El certificado "${certificado.alias}" del emisor ${emisorId} no tiene el archivo .p12 ` +
+            `o la contraseña guardados (columnas p12_cifrado / p12_password_cifrado vacías). ` +
+            `Vuelve a registrarlo desde /registro.`);
+    }
+    // Descifrado con la llave maestra del sistema (SECRETS_ENCRYPTION_KEY) —
+    // ver src/crypto/secrets.ts. Nada de esto sale de esta función.
+    const p12Buffer = descifrar(pgByteaABuffer(certificado.p12_cifrado));
+    const p12Password = descifrarTexto(pgByteaABuffer(certificado.p12_password_cifrado));
+    const sequenceProvider = new SupabaseSequenceProvider(emisorId);
+    return {
+        fe: new FacturacionElectronicaEC({
+            emisor: {
+                ruc: emisor.ruc,
+                razonSocial: emisor.razon_social,
+                nombreComercial: emisor.nombre_comercial ?? undefined,
+                dirMatriz: emisor.direccion_matriz,
+                establecimiento: puntoEmision.establecimiento,
+                puntoEmision: puntoEmision.punto_emision,
+                direccionEstablecimiento: puntoEmision.direccion,
+                contribuyenteEspecial: emisor.contribuyente_especial ?? undefined,
+                obligadoContabilidad: emisor.obligado_contabilidad,
+                ambiente: emisor.ambiente === 'produccion' ? '2' : '1',
+                agenteRetencion: emisor.agente_retencion ? 'SI' : undefined,
+            },
+            p12: p12Buffer,
+            p12Password,
+            sequenceProvider,
+            validateXsd: true, // capa extra local, no sustituye la validación del SRI
+        }),
+        ruc: emisor.ruc,
+        ambienteClave: emisor.ambiente === 'produccion' ? '2' : '1',
+        establecimiento: puntoEmision.establecimiento,
+        puntoEmision: puntoEmision.punto_emision,
+        sequenceProvider,
+    };
+}
+/**
+ * Inserta el campo de información adicional que exige la Resolución
+ * NAC-DGERCGC26-00000027 en el XML SIN FIRMAR, justo antes del cierre de
+ * `</factura>` — es la única posición válida según el XSD oficial
+ * (`infoAdicional` es el último elemento de la secuencia, inmediatamente
+ * antes de donde se agrega la firma XAdES-BES). Se hace ANTES de firmar
+ * porque cualquier cambio al XML después de firmado invalida la firma.
+ */
+function insertarInfoAdicionalRucProveedor(xmlSinFirmar, rucProveedor) {
+    const marcaCierre = '</factura>';
+    const posicion = xmlSinFirmar.lastIndexOf(marcaCierre);
+    if (posicion === -1) {
+        throw new Error('No se encontró la etiqueta de cierre </factura> en el XML generado — no se puede insertar infoAdicional.');
+    }
+    const bloque = `<infoAdicional><campoAdicional nombre="${NOMBRE_CAMPO_RUC_PROVEEDOR}">` +
+        `${escapeXmlBasico(rucProveedor)}</campoAdicional></infoAdicional>`;
+    return xmlSinFirmar.slice(0, posicion) + bloque + xmlSinFirmar.slice(posicion);
+}
+/** Escapado XML mínimo — el RUC es solo dígitos, pero se aplica igual por buena práctica. */
+function escapeXmlBasico(texto) {
+    return texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+const CODIGO_DOC_FACTURA = getCodDoc('FACTURA');
+const AUTHORIZATION_DELAY_MS = 1500; // igual al valor por defecto interno de la librería
+const MAX_ERROR_70_RETRIES = 3;
+const MAX_SEND_RETRIES = 2;
+const SEND_RETRY_DELAY_MS = 2000;
+const MAX_AUTHORIZATION_POLLS = 10;
+const AUTHORIZATION_POLL_DELAY_MS = 2000;
+function esperar(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+/**
+ * Reimplementación fiel del pipeline interno de `fe.emitirFactura()`
+ * (build → validar XSD offline → firmar → enviar con reintentos → esperar
+ * → verificar autorización, con reintento de secuencial nuevo ante código
+ * 70), con un único paso agregado: insertar `<infoAdicional>` con el RUC
+ * del proveedor antes de firmar.
+ */
+async function emitirFacturaConCampoAdicional({ fe, facturaData, ruc, ambienteClave, establecimiento, puntoEmision, sequenceProvider, rucProveedor, }) {
+    let ultimoError;
+    for (let intento = 0; intento <= MAX_ERROR_70_RETRIES; intento++) {
+        const secuencial = await sequenceProvider.next(establecimiento, puntoEmision, 'FACTURA');
+        const claveAcceso = generateClaveAcceso({
+            fechaEmision: facturaData.fechaEmision,
+            tipoComprobante: CODIGO_DOC_FACTURA,
+            ruc,
+            ambiente: ambienteClave,
+            establecimiento,
+            puntoEmision,
+            secuencial,
+            codigoNumerico: generateCodigoNumerico(),
+            tipoEmision: '1',
+        });
+        const xmlSinFirmar = fe.buildXml('FACTURA', facturaData, { secuencial, claveAcceso });
+        const xmlConCampo = insertarInfoAdicionalRucProveedor(xmlSinFirmar, rucProveedor);
+        // Validación offline contra el XSD oficial — si la inserción del campo
+        // rompiera la estructura, se detecta aquí, antes de firmar o tocar al SRI.
+        const validacion = await validateXmlAgainstXsd('FACTURA', xmlConCampo);
+        if (!validacion.valid) {
+            throw new Error(`El XML con el campo de información adicional no pasó la validación XSD local: ${validacion.errors.join('; ')}`);
+        }
+        const xmlFirmado = await fe.signXml(xmlConCampo, 'FACTURA');
+        let recepcion;
+        let errorEnvio;
+        for (let intentoEnvio = 0; intentoEnvio <= MAX_SEND_RETRIES; intentoEnvio++) {
+            try {
+                recepcion = await fe.sendToSri(xmlFirmado);
+                errorEnvio = undefined;
+                break;
+            }
+            catch (err) {
+                errorEnvio = err;
+                if (intentoEnvio < MAX_SEND_RETRIES)
+                    await esperar(SEND_RETRY_DELAY_MS);
+            }
+        }
+        if (!recepcion) {
+            throw errorEnvio instanceof Error ? errorEnvio : new Error(String(errorEnvio));
+        }
+        const recepcionSri = recepcion;
+        const estadoRecepcion = normalizarEstadoSri(recepcionSri.estado);
+        const mensajesRecepcion = extraerMensajesSri(recepcionSri);
+        const tieneCodigo70 = estadoRecepcion === 'DEVUELTA' && mensajesRecepcion.some((m) => m.identificador === '70');
+        if (estadoRecepcion === 'DEVUELTA' && !tieneCodigo70) {
+            // DEVUELTA es un rechazo de recepción: no se debe ocultar el código ni
+            // la informacionAdicional que entrega el SRI. El comprobante queda
+            // guardado localmente para trazabilidad, pero no se presenta como
+            // autorizado.
+            const detalle = formatearMensajesSri(recepcion);
+            return {
+                estado: 'DEVUELTA',
+                ambiente: ambienteClave === '2' ? 'produccion' : 'pruebas',
+                claveAcceso,
+                secuencial,
+                xmlOriginal: xmlConCampo,
+                xmlFirmado,
+                numeroAutorizacion: null,
+                fechaAutorizacion: null,
+                mensaje: detalle || 'Comprobante devuelto por el SRI.',
+            };
+        }
+        if (tieneCodigo70) {
+            // El SRI ya tiene esa clave de acceso en cola — esperar un poco y
+            // verificar si de todas formas se autorizó, antes de reintentar con
+            // secuencial nuevo (mismo comportamiento que la librería original).
+            await esperar(SEND_RETRY_DELAY_MS);
+            const autorizacionTrasCodigo70 = await fe.checkAuthorization(claveAcceso);
+            if (autorizacionTrasCodigo70.estado === 'AUTORIZADO') {
+                return construirResultadoDesdeAutorizacion(autorizacionTrasCodigo70, claveAcceso, secuencial, xmlConCampo, xmlFirmado, ambienteClave);
+            }
+            ultimoError = 'Código 70 del SRI (clave de acceso ya recibida) — reintentando con secuencial nuevo.';
+            continue;
+        }
+        // RECIBIDA — el SRI puede tardar más de 1.5 s en resolver la autorización.
+        // No debemos mostrar falsamente 'no autorizado' mientras siga procesando.
+        await esperar(AUTHORIZATION_DELAY_MS);
+        let autorizacion = null;
+        let ultimoErrorAutorizacion = null;
+        for (let consulta = 0; consulta < MAX_AUTHORIZATION_POLLS; consulta++) {
+            try {
+                autorizacion = await fe.checkAuthorization(claveAcceso);
+                ultimoErrorAutorizacion = null;
+                const estado = normalizarEstadoSri(autorizacion?.estado);
+                if (['AUTORIZADO', 'NO AUTORIZADO', 'RECHAZADA', 'DEVUELTA'].includes(estado))
+                    break;
+            }
+            catch (e) {
+                ultimoErrorAutorizacion = e;
+            }
+            if (consulta < MAX_AUTHORIZATION_POLLS - 1)
+                await esperar(AUTHORIZATION_POLL_DELAY_MS);
+        }
+        if (!autorizacion) {
+            return { estado: 'EN PROCESAMIENTO', ambiente: ambienteClave === '2' ? 'produccion' : 'pruebas', claveAcceso, secuencial, xmlOriginal: xmlConCampo, xmlFirmado, numeroAutorizacion: null, fechaAutorizacion: null, mensaje: ultimoErrorAutorizacion instanceof Error ? ultimoErrorAutorizacion.message : 'El SRI recibió el comprobante, pero todavía no devuelve la autorización.' };
+        }
+        return construirResultadoDesdeAutorizacion(autorizacion, claveAcceso, secuencial, xmlConCampo, xmlFirmado, ambienteClave);
+    }
+    throw new Error(ultimoError ?? 'No se pudo emitir el comprobante tras varios intentos (código 70 persistente).');
+}
+function construirResultadoDesdeAutorizacion(autorizacion, claveAcceso, secuencial, xmlOriginal, xmlFirmado, ambienteClave) {
+    const detalle = formatearMensajesSri(autorizacion);
+    const mensaje = autorizacion.mensaje?.trim() || detalle || `El SRI devolvió el estado ${autorizacion.estado}.`;
+    const fecha = autorizacion.fechaAutorizacion ? new Date(autorizacion.fechaAutorizacion) : null;
+    return {
+        estado: normalizarEstadoSri(autorizacion.estado),
+        ambiente: ambienteClave === '2' ? 'produccion' : 'pruebas',
+        claveAcceso,
+        secuencial,
+        xmlOriginal,
+        xmlFirmado,
+        numeroAutorizacion: autorizacion.numeroAutorizacion,
+        fechaAutorizacion: fecha,
+        mensaje,
+    };
+}
+export async function emitirFactura({ emisorId, comprobanteId, facturaData, }) {
+    const { fe, ruc, ambienteClave, establecimiento, puntoEmision, sequenceProvider } = await construirFacturadorParaEmisor(emisorId);
+    const rucProveedor = await obtenerRucProveedorSistema(emisorId);
+    if (!rucProveedor) {
+        throw new Error('No está configurado el RUC del proveedor del sistema de facturación. El RUC del proveedor es administrado de forma central por CONTSERTRIB y debe estar configurado en Railway (RUC_PROVEEDOR_FACTURACION).');
+    }
+    let resultado;
+    try {
+        resultado = await emitirFacturaConCampoAdicional({
+            fe,
+            facturaData,
+            ruc,
+            ambienteClave,
+            establecimiento,
+            puntoEmision,
+            sequenceProvider,
+            rucProveedor,
+        });
+    }
+    catch (err) {
+        let mensaje = err instanceof Error ? err.message : String(err);
+        // Bug conocido de la librería: cuando la validación XSD encuentra
+        // varios errores de forma, arma el mensaje con `array.join()` sobre
+        // objetos (no strings), y el resultado queda como "[object Object]"
+        // repetido — se pierde el detalle real. No hay forma de recuperar el
+        // detalle exacto desde aquí, pero al menos se da una pista útil en vez
+        // de un mensaje ilegible: los casos más comunes son campos que exceden
+        // el largo máximo que exige el SRI (p. ej. codigoPrincipal ≤ 25
+        // caracteres) o un tipo de dato con formato inválido.
+        if (mensaje.includes('[object Object]')) {
+            mensaje +=
+                ' — Es un error de formato del XML (la librería no da más detalle). Causas típicas: algún código de producto ' +
+                    'supera los 25 caracteres, o un campo numérico/fecha no tiene el formato que exige el SRI.';
+        }
+        await supabase
+            .from('comprobantes')
+            .update({
+            estado: 'rechazado',
+            motivo_error: mensaje,
+        })
+            .eq('id', comprobanteId);
+        await supabase.from('log_firmas').insert({
+            comprobante_id: comprobanteId,
+            resultado: 'error',
+            mensaje,
+        });
+        await registrarAuditoria({ emisorId, comprobanteId, evento: 'EMISION_ERROR', estado: 'RECHAZADO', detalle: { mensaje } });
+        throw err instanceof Error && mensaje !== err.message ? new Error(mensaje, { cause: err }) : err;
+    }
+    const estadoDb = mapearEstado(resultado.estado);
+    await supabase
+        .from('comprobantes')
+        .update({
+        estado: estadoDb,
+        secuencial: resultado.secuencial,
+        clave_acceso: resultado.claveAcceso,
+        xml_firmado: resultado.xmlFirmado,
+        numero_autorizacion: resultado.numeroAutorizacion ?? null,
+        fecha_autorizacion: resultado.estado === 'AUTORIZADO' ? new Date().toISOString() : null,
+        // Guardamos el mensaje real del SRI en texto para que el centro de
+        // notificaciones y el POS puedan mostrar exactamente la causa del rechazo.
+        motivo_error: resultado.estado !== 'AUTORIZADO' ? (resultado.mensaje ?? `Estado SRI: ${resultado.estado}`) : null,
+    })
+        .eq('id', comprobanteId);
+    await supabase.from('log_firmas').insert({
+        comprobante_id: comprobanteId,
+        resultado: resultado.estado === 'AUTORIZADO' ? 'ok' : 'error',
+        mensaje: resultado.mensaje ? `Estado SRI: ${resultado.estado} — ${resultado.mensaje}` : `Estado SRI: ${resultado.estado}`,
+    });
+    await registrarAuditoria({
+        emisorId, comprobanteId, tipoDocumento: 'FACTURA', evento: 'RESPUESTA_SRI',
+        estado: resultado.estado, claveAcceso: resultado.claveAcceso, secuencial: resultado.secuencial,
+        detalle: { mensaje: resultado.mensaje ?? null, numeroAutorizacion: resultado.numeroAutorizacion ?? null }
+    });
+    // Archivo documental permanente: para cada factura autorizada guardamos
+    // el XML firmado y el RIDE PDF en un bucket PRIVADO de Supabase Storage.
+    // Si Storage falla, la factura no se vuelve a rechazar: la autorización
+    // del SRI ya ocurrió y el incidente queda registrado para poder reintentar.
+    if (resultado.estado === 'AUTORIZADO' && resultado.xmlFirmado && resultado.claveAcceso) {
+        try {
+            await archivarComprobanteAutorizado({
+                comprobanteId,
+                emisorId,
+                claveAcceso: resultado.claveAcceso,
+                xmlFirmado: resultado.xmlFirmado,
+                secuencial: resultado.secuencial,
+            });
+        }
+        catch (archiveError) {
+            const detalleArchivo = archiveError instanceof Error ? archiveError.message : String(archiveError);
+            await supabase.from('log_firmas').insert({
+                comprobante_id: comprobanteId,
+                resultado: 'error',
+                mensaje: `Factura autorizada, pero falló el archivo permanente XML/RIDE: ${detalleArchivo}`,
+            });
+        }
+    }
+    return resultado;
+}
+/** Traduce el estado que devuelve la librería al enum usado en la columna `comprobantes.estado`. */
+function mapearEstado(estadoSri) {
+    switch (estadoSri) {
+        case 'AUTORIZADO':
+            return 'autorizado';
+        case 'NO AUTORIZADO':
+        case 'RECHAZADA':
+            return 'rechazado';
+        case 'DEVUELTA':
+            return 'devuelto';
+        default:
+            return 'enviado';
+    }
+}
+//# sourceMappingURL=facturacion.js.map
