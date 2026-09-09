@@ -1,0 +1,57 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Motor tributario · CONTSERTRIB</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f8fafc;color:#172033;margin:0}.wrap{max-width:1100px;margin:auto;padding:20px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid input,.grid select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px}.btn{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}.primary{background:#0f2747;color:#fff}.muted{color:#64748b;font-size:13px}.warn{background:#fff7ed;color:#9a3412;padding:10px;border-radius:10px;font-size:13px;line-height:1.5}.row{display:grid;grid-template-columns:1.2fr .6fr .6fr .7fr 1fr auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #e2e8f0;font-size:13px}.row:last-child{border-bottom:0}.pill{padding:4px 7px;border-radius:999px;background:#e0f2fe;color:#075985;font-size:11px;font-weight:700}@media(max-width:800px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr 1fr}.row .wide{grid-column:1/-1}}</style></head><body><div class="wrap"><div class="card"><h1>⚙️ Motor tributario Ecuador</h1><p class="muted">Las tarifas no están codificadas de forma permanente. El sistema resuelve la tarifa por perfil del producto, fecha de emisión y reglas vigentes.</p><div class="warn"><b>Importante:</b> si el SRI cambia una tarifa, no se edita una factura histórica. Se publica una nueva regla con fecha de inicio y código SRI. Las facturas futuras usan la nueva regla automáticamente.</div></div><div class="card"><h2>Publicar nueva regla de IVA</h2><div class="grid"><input id="clave" placeholder="Clave única, ej. IVA_GENERAL_2027"><input id="nombre" placeholder="Nombre visible"><input id="porcentaje" type="number" step="0.001" placeholder="Porcentaje"><input id="codigo" placeholder="Código SRI"><select id="tipo"><option>GENERAL</option><option>FIJA</option><option>TURISMO</option><option>CERO</option><option>EXENTO</option><option>NO_OBJETO</option></select><input id="inicio" type="date"><input id="fin" type="date"><input id="prioridad" type="number" value="100"><input id="norma" placeholder="Decreto / resolución / norma"><input id="descripcion" placeholder="Descripción"><button class="btn primary" id="guardar">Publicar regla</button></div><div id="msg" class="muted"></div></div><div class="card"><h2>Reglas registradas</h2><div id="lista">Cargando…</div></div></div><script>
+const $ = (id) => document.getElementById(id);
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[c]));
+}
+async function api(url, opt = {}) {
+  const r = await fetch(url, { credentials: 'same-origin', ...opt, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(opt.headers || {}) } });
+  let d = {};
+  try { d = await r.json(); } catch {}
+  if (!r.ok) throw Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+async function cargar() {
+  const d = await api('/impuestos/reglas');
+  $('lista').innerHTML = (d.reglas || []).map((x) => `
+    <div class="row">
+      <div class="wide"><b>${esc(x.nombre)}</b><br><small>${esc(x.clave)} · ${esc(x.norma_referencia || 'sin norma')}</small></div>
+      <div>${Number(x.porcentaje)}%</div>
+      <div>Código ${esc(x.codigo_sri)}</div>
+      <div><span class="pill">${esc(x.tipo)}</span></div>
+      <div>${esc(x.fecha_inicio)} → ${esc(x.fecha_fin || 'sin fin')}<br>${x.activo ? 'ACTIVA' : 'INACTIVA'}</div>
+      <div><button class="btn" data-id="${x.id}" data-activo="${x.activo}">${x.activo ? 'Desactivar' : 'Activar'}</button></div>
+    </div>`).join('') || 'No hay reglas.';
+  document.querySelectorAll('[data-id]').forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await api('/impuestos/reglas/' + b.dataset.id, { method: 'PATCH', body: JSON.stringify({ activo: b.dataset.activo !== 'true' }) });
+        await cargar();
+      } catch (e) { alert(e.message); }
+    };
+  });
+}
+$('guardar').onclick = async () => {
+  try {
+    const d = await api('/impuestos/reglas', {
+      method: 'POST',
+      body: JSON.stringify({
+        clave: $('clave').value,
+        nombre: $('nombre').value,
+        porcentaje: Number($('porcentaje').value),
+        codigoSri: $('codigo').value,
+        tipo: $('tipo').value,
+        fechaInicio: $('inicio').value,
+        fechaFin: $('fin').value || null,
+        prioridad: Number($('prioridad').value),
+        normaReferencia: $('norma').value,
+        descripcion: $('descripcion').value
+      })
+    });
+    $('msg').textContent = 'Regla publicada: ' + d.nombre;
+    await cargar();
+  } catch (e) { $('msg').textContent = 'Error: ' + e.message; }
+};
+cargar().catch((e) => { $('lista').textContent = e.message; });
+</script></body></html>
