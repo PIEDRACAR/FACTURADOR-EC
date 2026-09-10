@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reportes — CONTSERTRIB FACTURACIÓN</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 800px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 16px; }
+
+  .selector-reportes { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .opcion-reporte {
+    padding: 12px 10px; border-radius: 10px; border: 1px solid var(--gris-borde); background: var(--gris-fondo);
+    text-align: center; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: #334155;
+  }
+  .opcion-reporte.activa { background: var(--azul); color: white; border-color: var(--azul); }
+
+  .filtros { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 16px; }
+  .filtros > div { flex: 1; min-width: 130px; }
+  .filtros label { font-size: 0.75rem; font-weight: 600; color: var(--gris-texto); display: block; margin-bottom: 4px; }
+  .filtros input[type="date"] { width: 100%; padding: 8px 10px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.88rem; }
+  .filtros button {
+    background: var(--azul); color: white; border: none; padding: 9px 16px; border-radius: 8px;
+    font-weight: 700; font-size: 0.88rem; cursor: pointer;
+  }
+
+  .descargas { display: flex; gap: 10px; margin-top: 14px; }
+  .descargas a {
+    flex: 1; text-align: center; padding: 10px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.85rem;
+  }
+  .descargas a.excel { background: var(--verde-fondo); color: #166534; }
+  .descargas a.pdf { background: #fee2e2; color: #991b1b; }
+
+  .resumen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+  .resumen-item { background: var(--gris-fondo); border-radius: 10px; padding: 12px; text-align: center; }
+  .resumen-item .valor { font-size: 1.25rem; font-weight: 800; color: var(--azul-osc); }
+  .resumen-item .valor.utilidad { color: var(--verde); }
+  .resumen-item .etiqueta { font-size: 0.72rem; color: var(--gris-texto); margin-top: 2px; }
+
+  table.tabla-reporte { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+  table.tabla-reporte th { text-align: left; font-size: 0.72rem; text-transform: uppercase; color: var(--gris-texto); padding: 8px 6px; border-bottom: 2px solid var(--gris-borde); }
+  table.tabla-reporte td { padding: 8px 6px; border-bottom: 1px solid var(--gris-fondo); }
+  table.tabla-reporte td.derecha, table.tabla-reporte th.derecha { text-align: right; }
+  table.tabla-reporte tr.fila-total td { font-weight: 800; background: var(--azul-suave); color: var(--azul-osc); }
+
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 24px 0; }
+  .tabla-scroll { overflow-x: auto; }
+</style>
+<link rel="stylesheet" href="/app.css?v=9.9.4">
+<script src="/app-shell.js?v=9.9.4" defer></script>
+</head>
+<body>
+<header>
+  <h1>Reportes</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-inventario" href="#">Inventario</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <div class="tarjeta">
+    <h2>Tipo de reporte</h2>
+    <div class="selector-reportes" id="selector-reportes"></div>
+
+    <div class="filtros" id="filtros-fecha">
+      <div><label>Desde</label><input type="date" id="f-desde"></div>
+      <div><label>Hasta</label><input type="date" id="f-hasta"></div>
+      <div><button id="btn-consultar" type="button">Consultar</button></div>
+    </div>
+
+    <div class="descargas">
+      <a class="excel" id="descarga-excel" href="#" target="_blank">⬇ Descargar Excel</a>
+      <a class="pdf" id="descarga-pdf" href="#" target="_blank">⬇ Descargar PDF</a>
+    </div>
+  </div>
+
+  <div class="tarjeta" id="tarjeta-resumen" style="display:none;">
+    <h2>Resumen</h2>
+    <div class="resumen-grid" id="resumen-grid"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2 id="titulo-tabla">Detalle</h2>
+    <div class="tabla-scroll" id="contenedor-tabla"><div class="vacio">Selecciona un reporte.</div></div>
+  </div>
+</div>
+
+<div class="ec-modal-backdrop" id="modal-reenvio">
+  <div class="ec-modal">
+    <h3>✉ Reenviar factura por correo</h3>
+    <p>La factura autorizada se enviará al cliente con el RIDE en PDF y el XML firmado.</p>
+    <label style="display:block;font-size:.78rem;font-weight:700;color:#64748b;margin-bottom:6px">Correo del cliente</label>
+    <input id="correo-reenvio" type="email" placeholder="cliente@correo.com" style="width:100%;padding:11px 13px;border:1px solid #e5e7eb;border-radius:9px;font-size:.95rem">
+    <div id="mensaje-reenvio" style="font-size:.8rem;margin-top:10px"></div>
+    <div class="acciones"><button class="cancelar" id="cancelar-reenvio">Cancelar</button><button class="confirmar" id="confirmar-reenvio">Enviar factura</button></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId') || localStorage.getItem('facturador_emisor_id') || window.__FACTURADOR_EMISOR_ID__ || '';
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-inventario').href = '/inventario?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+function dinero(n) { return '$' + Number(n).toFixed(2); }
+
+const REPORTES = [
+  { tipo: 'rentabilidad', nombre: 'Rentabilidad', usaFechas: true },
+  { tipo: 'ventas-periodo', nombre: 'Ventas por día', usaFechas: true },
+  { tipo: 'ventas', nombre: 'Listado de ventas', usaFechas: true },
+  { tipo: 'auditoria', nombre: 'Auditoría SRI', usaFechas: true },
+  { tipo: 'compras', nombre: 'Listado de compras', usaFechas: true },
+  { tipo: 'proformas', nombre: 'Proformas', usaFechas: false },
+  { tipo: 'clientes', nombre: 'Clientes', usaFechas: true },
+  { tipo: 'proveedores', nombre: 'Proveedores', usaFechas: true },
+  { tipo: 'cuentas-por-cobrar', nombre: 'Cuentas por cobrar', usaFechas: false },
+  { tipo: 'cuentas-por-pagar', nombre: 'Cuentas por pagar', usaFechas: false },
+  { tipo: 'inventario-valorizado', nombre: 'Inventario valorizado', usaFechas: false },
+  { tipo: 'caja', nombre: 'Caja / arqueos', usaFechas: true },
+];
+
+let reporteActivo = REPORTES[0].tipo;
+
+document.getElementById('selector-reportes').innerHTML = REPORTES.map((r) =>
+  `<div class="opcion-reporte ${r.tipo === reporteActivo ? 'activa' : ''}" data-tipo="${r.tipo}">${r.nombre}</div>`
+).join('');
+
+const hoy = new Date();
+const hace30 = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
+document.getElementById('f-hasta').value = hoy.toISOString().slice(0, 10);
+document.getElementById('f-desde').value = hace30.toISOString().slice(0, 10);
+
+document.querySelectorAll('.opcion-reporte').forEach((el) => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.opcion-reporte').forEach((o) => o.classList.remove('activa'));
+    el.classList.add('activa');
+    reporteActivo = el.dataset.tipo;
+    const config = REPORTES.find((r) => r.tipo === reporteActivo);
+    document.getElementById('filtros-fecha').style.display = config.usaFechas ? 'flex' : 'none';
+    consultar();
+  });
+});
+
+function actualizarEnlacesDescarga() {
+  const desde = document.getElementById('f-desde').value;
+  const hasta = document.getElementById('f-hasta').value;
+  const config = REPORTES.find((r) => r.tipo === reporteActivo);
+  let base = `/reportes/exportar?emisorId=${encodeURIComponent(emisorId)}&tipo=${reporteActivo}`;
+  if (config.usaFechas) base += `&desde=${desde}&hasta=${hasta}`;
+  document.getElementById('descarga-excel').href = base + '&formato=excel';
+  document.getElementById('descarga-pdf').href = base + '&formato=pdf';
+}
+
+async function consultar() {
+  if (!emisorId) {
+    document.getElementById('contenedor-tabla').innerHTML = '<div class="vacio">Falta emisorId en la URL.</div>';
+    return;
+  }
+  actualizarEnlacesDescarga();
+
+  const desde = document.getElementById('f-desde').value;
+  const hasta = document.getElementById('f-hasta').value;
+  const config = REPORTES.find((r) => r.tipo === reporteActivo);
+  let url = `/reportes/${reporteActivo}?emisorId=${encodeURIComponent(emisorId)}`;
+  if (config.usaFechas) url += `&desde=${desde}&hasta=${hasta}`;
+
+  document.getElementById('contenedor-tabla').innerHTML = '<div class="vacio">Consultando…</div>';
+  document.getElementById('tarjeta-resumen').style.display = 'none';
+
+  const resp = await fetch(url);
+  if (!resp.ok) { document.getElementById('contenedor-tabla').innerHTML = '<div class="vacio">Error al consultar el reporte.</div>'; return; }
+  const datos = await resp.json();
+
+  renderReporte(reporteActivo, datos);
+  activarReenvioCorreo();
+}
+
+async function gestionarAnulacion(id) {
+  try {
+    const r = await fetch('/comprobantes/' + encodeURIComponent(id) + '/anulacion');
+    const x = await r.json();
+    if (x.solicitud?.estado === 'pendiente') {
+      const ok = prompt('Verifica primero en SRI en Línea que la factura esté ANULADA. Para confirmar aquí escribe exactamente ANULADO:','');
+      if (ok === null) return;
+      const c = await fetch('/comprobantes/' + encodeURIComponent(id) + '/anulacion/confirmar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmacion:ok})});
+      const cx = await c.json();
+      if (!c.ok) throw new Error(cx.error || 'No se pudo confirmar.');
+      alert('✓ ' + cx.mensaje); consultar(); return;
+    }
+  } catch(e) { alert(e.message); return; }
+  const motivo = prompt('Motivo de la anulación (obligatorio):', 'Error en la emisión / operación no realizada');
+  if (motivo === null) return;
+  if (motivo.trim().length < 5) return alert('El motivo debe tener al menos 5 caracteres.');
+  if (!confirm('La solicitud se registrará como PENDIENTE DE ANULAR. Deberás verificar la anulación en SRI en Línea. ¿Continuar?')) return;
+  try {
+    const r = await fetch('/comprobantes/' + encodeURIComponent(id) + '/anulacion', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({motivo:motivo.trim(), emisorId})});
+    const x = await r.json();
+    if (!r.ok) throw new Error(x.error || x.detalle || 'No se pudo registrar la anulación.');
+    alert('✓ ' + x.mensaje + '\n\nEstado: PENDIENTE DE ANULAR');
+    window.open(x.sriUrl, '_blank');
+    consultar();
+  } catch(e) { alert('No se pudo solicitar la anulación: ' + e.message); }
+}
+
+function activarReenvioCorreo() {
+  document.querySelectorAll('[data-reenviar]').forEach((boton) => {
+    boton.addEventListener('click', async () => {
+      const id = boton.dataset.reenviar;
+      const emailActual = boton.dataset.email || '';
+      abrirModalReenvio(id, emailActual, boton);
+    });
+  });
+}
+
+let reenvioPendiente = null;
+function abrirModalReenvio(id, email, boton) {
+  reenvioPendiente = { id, boton };
+  document.getElementById('correo-reenvio').value = email || '';
+  document.getElementById('mensaje-reenvio').textContent = '';
+  document.getElementById('modal-reenvio').classList.add('visible');
+  setTimeout(() => document.getElementById('correo-reenvio').focus(), 50);
+}
+document.getElementById('cancelar-reenvio').addEventListener('click', () => document.getElementById('modal-reenvio').classList.remove('visible'));
+document.getElementById('modal-reenvio').addEventListener('click', (e) => { if (e.target.id === 'modal-reenvio') e.currentTarget.classList.remove('visible'); });
+document.getElementById('confirmar-reenvio').addEventListener('click', async () => {
+  if (!reenvioPendiente) return;
+  const correo = document.getElementById('correo-reenvio').value.trim();
+  const msg = document.getElementById('mensaje-reenvio');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) { msg.style.color='#b91c1c'; msg.textContent='Ingresa un correo electrónico válido.'; return; }
+  const confirmar = document.getElementById('confirmar-reenvio');
+  const boton = reenvioPendiente.boton;
+  confirmar.disabled = true; confirmar.textContent = 'Enviando…';
+  try {
+    const resp = await fetch('/comprobantes/' + encodeURIComponent(reenvioPendiente.id) + '/reenviar-email', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email: correo, emisorId }) });
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || datos.detalle || 'No se pudo reenviar.');
+    msg.style.color='#166534'; msg.textContent='✓ Factura enviada correctamente.';
+    boton.textContent='✓ Enviada'; boton.title='Factura reenviada a ' + datos.destinatario;
+    setTimeout(() => document.getElementById('modal-reenvio').classList.remove('visible'), 700);
+  } catch (err) {
+    msg.style.color='#b91c1c'; msg.textContent=err.message;
+  } finally {
+    confirmar.disabled=false; confirmar.textContent='Enviar factura';
+  }
+});
+
+function renderResumen(items) {
+  const tarjeta = document.getElementById('tarjeta-resumen');
+  const grid = document.getElementById('resumen-grid');
+  tarjeta.style.display = 'block';
+  grid.innerHTML = items.map((it) =>
+    `<div class="resumen-item"><div class="valor ${it.clase || ''}">${it.valor}</div><div class="etiqueta">${it.etiqueta}</div></div>`
+  ).join('');
+}
+
+function tabla(columnas, filas, filaTotalHtml) {
+  if (filas.length === 0) return '<div class="vacio">Sin datos para mostrar.</div>';
+  const encabezado = columnas.map((c) => `<th class="${c.derecha ? 'derecha' : ''}">${c.etiqueta}</th>`).join('');
+  const cuerpo = filas.map((f) =>
+    `<tr>${columnas.map((c) => `<td class="${c.derecha ? 'derecha' : ''}">${f[c.clave] ?? ''}</td>`).join('')}</tr>`
+  ).join('');
+  return `<table class="tabla-reporte"><thead><tr>${encabezado}</tr></thead><tbody>${cuerpo}${filaTotalHtml || ''}</tbody></table>`;
+}
+
+function renderReporte(tipo, datos) {
+  const titulo = document.getElementById('titulo-tabla');
+  const cont = document.getElementById('contenedor-tabla');
+
+  if (tipo === 'rentabilidad') {
+    titulo.textContent = 'Rentabilidad por producto';
+    renderResumen([
+      { valor: dinero(datos.totales.ingresos), etiqueta: 'Ingresos' },
+      { valor: dinero(datos.totales.costo), etiqueta: 'Costo' },
+      { valor: dinero(datos.totales.utilidad), etiqueta: 'Utilidad', clase: 'utilidad' },
+      { valor: datos.totales.margen.toFixed(1) + '%', etiqueta: 'Margen' },
+    ]);
+    cont.innerHTML = tabla(
+      [{ clave: 'descripcion', etiqueta: 'Producto' }, { clave: 'cantidad', etiqueta: 'Cant.', derecha: true },
+       { clave: 'ingresos', etiqueta: 'Ingresos', derecha: true }, { clave: 'utilidad', etiqueta: 'Utilidad', derecha: true },
+       { clave: 'margen', etiqueta: 'Margen %', derecha: true }],
+      datos.productos.map((p) => ({ ...p, ingresos: dinero(p.ingresos), utilidad: dinero(p.utilidad), margen: p.margen + '%' }))
+    );
+  } else if (tipo === 'ventas-periodo') {
+    titulo.textContent = 'Ventas por día';
+    renderResumen([
+      { valor: dinero(datos.totales.totalVentas), etiqueta: 'Total vendido' },
+      { valor: datos.totales.cantidadFacturas, etiqueta: 'N.° facturas' },
+      { valor: dinero(datos.totales.promedioFactura), etiqueta: 'Promedio/factura' },
+    ]);
+    cont.innerHTML = tabla(
+      [{ clave: 'fecha', etiqueta: 'Fecha' }, { clave: 'cantidad', etiqueta: 'Facturas', derecha: true }, { clave: 'total', etiqueta: 'Total', derecha: true }],
+      datos.dias.map((d) => ({ ...d, total: dinero(d.total) }))
+    );
+  } else if (tipo === 'ventas') {
+    titulo.textContent = 'Listado de ventas';
+    cont.innerHTML = tabla(
+      [{ clave: 'fecha', etiqueta: 'Fecha' }, { clave: 'secuencial', etiqueta: 'N.°' }, { clave: 'cliente', etiqueta: 'Cliente' },
+       { clave: 'total', etiqueta: 'Total', derecha: true }, { clave: 'estado', etiqueta: 'Estado' }, { clave: 'descargas', etiqueta: 'Respaldo' }],
+      datos.ventas.map((v) => ({
+        ...v,
+        total: dinero(v.total),
+        descargas: v.estado === 'autorizado'
+          ? `<a href="/comprobantes/${v.id}/xml" target="_blank" style="color:#1d4ed8;margin-right:8px;">XML</a><a href="/comprobantes/${v.id}/ride" target="_blank" style="color:#1d4ed8;margin-right:8px;">PDF</a><a href="/comprobantes/${v.id}/ticket" target="_blank" style="color:#0f766e;margin-right:8px;">🖨 Ticket</a><button class="ec-action email" data-reenviar="${v.id}" data-email="${v.email || ''}">✉ Reenviar</button><button class="ec-action" style="margin-left:6px;color:#b91c1c" onclick="gestionarAnulacion('${v.id}')">🚫 Anular</button>`
+          : v.estado === 'anulado' ? '<span style="color:#b91c1c;font-weight:700">ANULADA</span>' : '—',
+      }))
+    );
+  } else if (tipo === 'auditoria') {
+    titulo.textContent = 'Auditoría SRI y cumplimiento';
+    renderResumen([
+      { valor: datos.resumen.autorizados, etiqueta: 'Autorizados' },
+      { valor: datos.resumen.archivados, etiqueta: 'Archivados' },
+      { valor: datos.resumen.rechazados, etiqueta: 'Rechazados / devueltos' },
+      { valor: datos.resumen.coberturaArchivo + '%', etiqueta: 'Cobertura documental' },
+    ]);
+    const filas = datos.checklist.map((x) => ({ criterio:x.titulo, estado:x.estado, detalle:x.detalle }));
+    cont.innerHTML = tabla(
+      [{clave:'criterio',etiqueta:'Control'}, {clave:'estado',etiqueta:'Estado'}, {clave:'detalle',etiqueta:'Detalle'}], filas
+    ) + '<h3 style="margin:22px 0 8px">Últimos eventos</h3>' + tabla(
+      [{clave:'created_at',etiqueta:'Fecha/Hora'}, {clave:'usuario_email',etiqueta:'Usuario'}, {clave:'evento',etiqueta:'Evento'}, {clave:'estado',etiqueta:'Estado'}, {clave:'secuencial',etiqueta:'Secuencial'}],
+      datos.eventos.map((e) => ({...e, created_at:new Date(e.created_at).toLocaleString('es-EC')}))
+    );
+  } else if (tipo === 'proformas') {
+    titulo.textContent = 'Proformas';
+    cont.innerHTML = tabla(
+      [{ clave:'numero', etiqueta:'Número' }, { clave:'fechaEmision', etiqueta:'Emisión' }, { clave:'fechaValidez', etiqueta:'Validez' }, { clave:'cliente', etiqueta:'Cliente' }, { clave:'estado', etiqueta:'Estado' }, { clave:'total', etiqueta:'Total', derecha:true }],
+      (datos || []).map((p) => ({ ...p, total: dinero(p.total) }))
+    );
+  } else if (tipo === 'compras') {
+    titulo.textContent = 'Listado de compras';
+    cont.innerHTML = tabla(
+      [{ clave: 'fecha', etiqueta: 'Fecha' }, { clave: 'producto', etiqueta: 'Producto' }, { clave: 'proveedor', etiqueta: 'Proveedor' },
+       { clave: 'cantidad', etiqueta: 'Cant.', derecha: true }, { clave: 'total', etiqueta: 'Total', derecha: true }],
+      datos.compras.map((c) => ({ ...c, total: dinero(c.total) }))
+    );
+  } else if (tipo === 'clientes') {
+    titulo.textContent = 'Clientes';
+    cont.innerHTML = tabla(
+      [{ clave: 'cliente', etiqueta: 'Cliente' }, { clave: 'cantidadCompras', etiqueta: 'Compras', derecha: true }, { clave: 'totalComprado', etiqueta: 'Total comprado', derecha: true }],
+      datos.clientes.map((c) => ({ ...c, totalComprado: dinero(c.totalComprado) }))
+    );
+  } else if (tipo === 'proveedores') {
+    titulo.textContent = 'Proveedores';
+    cont.innerHTML = tabla(
+      [{ clave: 'proveedor', etiqueta: 'Proveedor' }, { clave: 'cantidadCompras', etiqueta: 'Compras', derecha: true }, { clave: 'totalComprado', etiqueta: 'Total comprado', derecha: true }],
+      datos.proveedores.map((p) => ({ ...p, totalComprado: dinero(p.totalComprado) }))
+    );
+  } else if (tipo === 'cuentas-por-cobrar' || tipo === 'cuentas-por-pagar') {
+    titulo.textContent = tipo === 'cuentas-por-cobrar' ? 'Cuentas por cobrar' : 'Cuentas por pagar';
+    renderResumen([
+      { valor: dinero(datos.totalPendiente), etiqueta: 'Total pendiente' },
+      { valor: dinero(datos.totalVencido), etiqueta: 'Vencido' },
+      { valor: datos.cantidadVencidas, etiqueta: 'Cuentas vencidas' },
+    ]);
+    cont.innerHTML = '<div class="vacio">Ver el detalle completo en la pantalla de ' + (tipo === 'cuentas-por-cobrar' ? 'Cuentas por cobrar' : 'Cuentas por pagar') + ', o descarga el PDF/Excel arriba.</div>';
+  } else if (tipo === 'caja') {
+    titulo.textContent = 'Reporte de caja y arqueos';
+    renderResumen([
+      { valor: dinero(datos.resumen?.ventasEfectivo || 0), etiqueta: 'Ventas en efectivo' },
+      { valor: dinero(datos.resumen?.ventasOtros || 0), etiqueta: 'Ventas otros medios' },
+      { valor: dinero(datos.resumen?.ingresosManuales || 0), etiqueta: 'Ingresos manuales' },
+      { valor: dinero(datos.resumen?.egresosManuales || 0), etiqueta: 'Egresos manuales' },
+    ]);
+    cont.innerHTML = tabla(
+      [
+        { clave:'apertura', etiqueta:'Apertura' },
+        { clave:'cierre', etiqueta:'Cierre' },
+        { clave:'estado', etiqueta:'Estado' },
+        { clave:'inicial', etiqueta:'Inicial', derecha:true },
+        { clave:'efectivoEsperado', etiqueta:'Efectivo esperado', derecha:true },
+        { clave:'declarado', etiqueta:'Efectivo contado', derecha:true },
+        { clave:'diferencia', etiqueta:'Diferencia', derecha:true },
+      ],
+      (datos.cajas || []).map((c) => ({
+        apertura: c.apertura,
+        cierre: c.cierre || '—',
+        estado: c.estado,
+        inicial: dinero(c.inicial),
+        efectivoEsperado: dinero(c.efectivoEsperado),
+        declarado: c.declarado == null ? '—' : dinero(c.declarado),
+        diferencia: c.diferencia == null ? '—' : dinero(c.diferencia),
+      }))
+    );
+  } else if (tipo === 'inventario-valorizado') {
+    titulo.textContent = 'Inventario valorizado';
+    renderResumen([{ valor: dinero(datos.valorTotalInventario), etiqueta: 'Valor total del inventario' }]);
+    cont.innerHTML = tabla(
+      [{ clave: 'descripcion', etiqueta: 'Producto' }, { clave: 'stock', etiqueta: 'Stock', derecha: true },
+       { clave: 'costoPromedio', etiqueta: 'Costo prom.', derecha: true }, { clave: 'valorTotal', etiqueta: 'Valor total', derecha: true }],
+      datos.productos.map((p) => ({ ...p, costoPromedio: dinero(p.costoPromedio), valorTotal: dinero(p.valorTotal) }))
+    );
+  }
+}
+
+document.getElementById('btn-consultar').addEventListener('click', consultar);
+consultar();
+</script>
+</body>
+</html>
