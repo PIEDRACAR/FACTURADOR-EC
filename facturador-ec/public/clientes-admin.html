@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clientes — CONTSERTRIB FACTURACIÓN</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626; --rojo-fondo: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 16px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gris-texto); margin-top: 14px; margin-bottom: 5px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], select { width: 100%; padding: 11px 13px; border: 1px solid var(--gris-borde); border-radius: 9px; font-size: 0.95rem; }
+  .fila-doble { display: flex; gap: 12px; }
+  .fila-doble > div { flex: 1; }
+  .toggle-form-nuevo {
+    width: 100%; background: var(--azul-suave); color: var(--azul-osc); border: 1px dashed var(--azul);
+    padding: 12px; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-bottom: 4px;
+  }
+  #form-cliente { display: none; }
+  #form-cliente.visible { display: block; }
+  button.principal {
+    width: 100%; background: var(--azul); color: white; border: none; padding: 13px;
+    border-radius: 9px; font-size: 0.95rem; font-weight: 700; margin-top: 16px; cursor: pointer;
+  }
+  .mensaje { border-radius: 9px; padding: 11px 13px; margin-top: 14px; font-size: 0.85rem; display: none; }
+  .mensaje.exito { background: var(--verde-fondo); color: #166534; display: block; }
+  .mensaje.error { background: var(--rojo-fondo); color: #991b1b; display: block; }
+  .buscador-lista input { width: 100%; padding: 10px 12px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.9rem; margin-bottom: 12px; }
+  .fila-cliente { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .fila-cliente:last-child { border-bottom: none; }
+  .fila-cliente .nombre { font-size: 0.92rem; font-weight: 600; }
+  .fila-cliente .meta { font-size: 0.76rem; color: var(--gris-texto); margin-top: 2px; }
+  button.secundario {
+    background: none; border: 1px solid var(--gris-borde); color: var(--gris-texto);
+    padding: 6px 12px; border-radius: 20px; font-size: 0.76rem; cursor: pointer; font-weight: 600; flex-shrink: 0;
+  }
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 24px 0; }
+</style>
+<link rel="stylesheet" href="/app.css?v=9.9.8">
+<script src="/app-shell.js?v=9.9.8" defer></script>
+</head>
+<body>
+<header>
+  <h1>Clientes</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+    <a id="enlace-pos" href="#">Punto de venta</a>
+    <a id="enlace-cxc" href="#">Cuentas por cobrar</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <button class="toggle-form-nuevo" id="btn-nuevo" type="button">+ Agregar cliente</button>
+
+  <div class="tarjeta" id="form-cliente">
+    <h2 id="titulo-form">Nuevo cliente</h2>
+    <input type="hidden" id="c-identificacion-original">
+
+    <div class="fila-doble">
+      <div>
+        <label>Tipo de identificación</label>
+        <select id="c-tipo">
+          <option value="05">Cédula</option>
+          <option value="04">RUC</option>
+          <option value="06">Pasaporte</option>
+          <option value="07">Consumidor final</option>
+        </select>
+      </div>
+      <div>
+        <label>Identificación</label>
+        <div style="display:flex;gap:6px"><input style="flex:1" type="text" id="c-identificacion" placeholder="Número de documento"><button type="button" id="btn-consultar-c">🔎</button></div><small id="c-consulta-msg" style="color:#64748b"></small>
+      </div>
+    </div>
+
+    <label>Razón social / Nombre</label>
+    <input type="text" id="c-razon-social" placeholder="Nombre completo">
+
+    <div class="fila-doble">
+      <div>
+        <label>Teléfono (opcional)</label>
+        <input type="text" id="c-telefono">
+      </div>
+      <div>
+        <label>Email (opcional)</label>
+        <input type="text" id="c-email" required>
+      </div>
+    </div>
+
+    <label>Dirección (opcional)</label>
+    <input type="text" id="c-direccion">
+
+    <button class="principal" id="btn-guardar" type="button">Guardar cliente</button>
+    <div class="mensaje" id="mensaje-form"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Clientes registrados</h2>
+    <div class="buscador-lista">
+      <input type="text" id="filtro" placeholder="Buscar por nombre…">
+    </div>
+    <div id="lista-clientes"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId') || localStorage.getItem('facturador_emisor_id') || window.__FACTURADOR_EMISOR_ID__ || '';
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-pos').href = '/pos?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-cxc').href = '/cuentas-por-cobrar?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+let clientes = [];
+
+async function cargarClientes() {
+  if (!emisorId) return;
+  const resp = await fetch('/clientes?emisorId=' + encodeURIComponent(emisorId));
+  clientes = resp.ok ? await resp.json() : [];
+  renderLista();
+}
+
+function renderLista() {
+  const cont = document.getElementById('lista-clientes');
+  const filtro = document.getElementById('filtro').value.trim().toLowerCase();
+  const filtrados = clientes.filter((c) => c.razon_social.toLowerCase().includes(filtro));
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = `<div class="vacio">${clientes.length === 0 ? 'Todavía no hay clientes registrados manualmente (los que compran en el POS se agregan solos).' : 'Sin resultados.'}</div>`;
+    return;
+  }
+
+  cont.innerHTML = filtrados.map((c) => `
+    <div class="fila-cliente">
+      <div>
+        <div class="nombre">${c.razon_social}</div>
+        <div class="meta">${c.identificacion}${c.telefono ? ' · ' + c.telefono : ''}${c.email ? ' · ' + c.email : ''}</div>
+      </div>
+      <button class="secundario" data-accion="editar" data-id="${c.id}">Editar</button>
+    </div>
+  `).join('');
+
+  cont.querySelectorAll('[data-accion="editar"]').forEach((btn) => btn.addEventListener('click', () => abrirEdicion(btn.dataset.id)));
+}
+
+document.getElementById('filtro').addEventListener('input', renderLista);
+
+const formCliente = document.getElementById('form-cliente');
+document.getElementById('btn-nuevo').addEventListener('click', () => {
+  limpiarFormulario();
+  formCliente.classList.add('visible');
+  document.getElementById('titulo-form').textContent = 'Nuevo cliente';
+  formCliente.scrollIntoView({ behavior: 'smooth' });
+});
+
+function limpiarFormulario() {
+  document.getElementById('c-identificacion-original').value = '';
+  document.getElementById('c-tipo').value = '05';
+  document.getElementById('c-identificacion').value = '';
+  document.getElementById('c-razon-social').value = '';
+  document.getElementById('c-telefono').value = '';
+  document.getElementById('c-email').value = '';
+  document.getElementById('c-direccion').value = '';
+  document.getElementById('c-identificacion').disabled = false;
+  document.getElementById('c-tipo').disabled = false;
+  document.getElementById('mensaje-form').className = 'mensaje';
+}
+
+function abrirEdicion(id) {
+  const c = clientes.find((x) => x.id === id);
+  if (!c) return;
+  document.getElementById('c-identificacion-original').value = c.id;
+  document.getElementById('c-tipo').value = c.tipo_identificacion;
+  document.getElementById('c-identificacion').value = c.identificacion;
+  document.getElementById('c-razon-social').value = c.razon_social;
+  document.getElementById('c-telefono').value = c.telefono || '';
+  document.getElementById('c-email').value = c.email || '';
+  document.getElementById('c-direccion').value = c.direccion || '';
+  document.getElementById('c-identificacion').disabled = true;
+  document.getElementById('c-tipo').disabled = true;
+  document.getElementById('titulo-form').textContent = 'Editar cliente';
+  formCliente.classList.add('visible');
+  formCliente.scrollIntoView({ behavior: 'smooth' });
+}
+
+document.getElementById('btn-consultar-c').addEventListener('click', async()=>{const v=document.getElementById('c-identificacion').value.replace(/\D/g,'');const msg=document.getElementById('c-consulta-msg');if(v.length!==10&&v.length!==13){msg.textContent='Ingresa una cédula de 10 o RUC de 13 dígitos.';return}msg.textContent='Consultando…';const tipo=v.length===13?'04':'05';try{const r=await fetch('/clientes/consultar?tipo='+tipo+'&identificacion='+v);const d=await r.json();if(d.encontrado){document.getElementById('c-razon-social').value=d.datos?.razonSocial||'';document.getElementById('c-direccion').value=d.datos?.direccion||'';msg.textContent='✅ Datos encontrados automáticamente.'}else msg.textContent=d.mensaje||'No se encontraron datos.'}catch(e){msg.textContent='No fue posible consultar.'}});
+let ct;document.getElementById('c-identificacion').addEventListener('input',()=>{clearTimeout(ct);const v=document.getElementById('c-identificacion').value.replace(/\D/g,'');if(v.length===10||v.length===13)ct=setTimeout(()=>document.getElementById('btn-consultar-c').click(),500)});
+document.getElementById('btn-guardar').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-guardar');
+  const mensaje = document.getElementById('mensaje-form');
+  mensaje.className = 'mensaje';
+
+  const idExistente = document.getElementById('c-identificacion-original').value;
+  const identificacion = document.getElementById('c-identificacion').value.trim();
+  const razonSocial = document.getElementById('c-razon-social').value.trim();
+  const tipoIdentificacion = document.getElementById('c-tipo').value;
+
+  if (!identificacion || !razonSocial) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Completa al menos identificación y razón social.';
+    return;
+  }
+
+  boton.disabled = true; boton.textContent = 'Guardando…';
+  try {
+    let resp;
+    if (idExistente) {
+      resp = await fetch('/clientes/' + idExistente, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          razonSocial,
+          telefono: document.getElementById('c-telefono').value.trim() || undefined,
+          email: document.getElementById('c-email').value.trim() || undefined,
+          direccion: document.getElementById('c-direccion').value.trim() || undefined,
+        }),
+      });
+    } else {
+      resp = await fetch('/clientes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emisorId, tipoIdentificacion, identificacion, razonSocial,
+          telefono: document.getElementById('c-telefono').value.trim() || undefined,
+          email: document.getElementById('c-email').value.trim() || undefined,
+          direccion: document.getElementById('c-direccion').value.trim() || undefined,
+        }),
+      });
+    }
+
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = idExistente ? 'Cliente actualizado.' : 'Cliente agregado.';
+    await cargarClientes();
+    setTimeout(() => { formCliente.classList.remove('visible'); limpiarFormulario(); }, 900);
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Guardar cliente';
+  }
+});
+
+cargarClientes();
+</script>
+</body>
+</html>
