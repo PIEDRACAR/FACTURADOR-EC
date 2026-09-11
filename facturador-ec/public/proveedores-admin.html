@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proveedores — CONTSERTRIB FACTURACIÓN</title>
+<style>
+  :root {
+    --azul: #1d4ed8; --azul-osc: #1e3a8a; --azul-suave: #eff6ff;
+    --gris-borde: #e2e8f0; --gris-fondo: #f8fafc; --gris-texto: #64748b;
+    --verde: #16a34a; --verde-fondo: #dcfce7; --rojo: #dc2626; --rojo-fondo: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--gris-fondo); margin: 0; padding: 0 0 40px; color: #1e293b;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul-osc), var(--azul)); color: white;
+    padding: 18px 16px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(30,58,138,0.25);
+  }
+  header h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+  header .emisor { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  header .nav { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  header .nav a {
+    color: white; text-decoration: none; font-size: 0.78rem; opacity: 0.9;
+    border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 20px;
+  }
+  .contenedor { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .tarjeta {
+    background: white; border-radius: 14px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1px solid var(--gris-borde);
+  }
+  .tarjeta h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris-texto); font-weight: 700; margin: 0 0 16px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gris-texto); margin-top: 14px; margin-bottom: 5px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], select { width: 100%; padding: 11px 13px; border: 1px solid var(--gris-borde); border-radius: 9px; font-size: 0.95rem; }
+  .fila-doble { display: flex; gap: 12px; }
+  .fila-doble > div { flex: 1; }
+  .toggle-form-nuevo {
+    width: 100%; background: var(--azul-suave); color: var(--azul-osc); border: 1px dashed var(--azul);
+    padding: 12px; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-bottom: 4px;
+  }
+  #form-proveedor { display: none; }
+  #form-proveedor.visible { display: block; }
+  button.principal {
+    width: 100%; background: var(--azul); color: white; border: none; padding: 13px;
+    border-radius: 9px; font-size: 0.95rem; font-weight: 700; margin-top: 16px; cursor: pointer;
+  }
+  .mensaje { border-radius: 9px; padding: 11px 13px; margin-top: 14px; font-size: 0.85rem; display: none; }
+  .mensaje.exito { background: var(--verde-fondo); color: #166534; display: block; }
+  .mensaje.error { background: var(--rojo-fondo); color: #991b1b; display: block; }
+  .buscador-lista input { width: 100%; padding: 10px 12px; border: 1px solid var(--gris-borde); border-radius: 8px; font-size: 0.9rem; margin-bottom: 12px; }
+  .fila-proveedor { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--gris-fondo); }
+  .fila-proveedor:last-child { border-bottom: none; }
+  .fila-proveedor.inactivo { opacity: 0.5; }
+  .fila-proveedor .nombre { font-size: 0.92rem; font-weight: 600; }
+  .fila-proveedor .meta { font-size: 0.76rem; color: var(--gris-texto); margin-top: 2px; }
+  .fila-proveedor .acciones { display: flex; gap: 6px; flex-shrink: 0; }
+  button.secundario {
+    background: none; border: 1px solid var(--gris-borde); color: var(--gris-texto);
+    padding: 6px 12px; border-radius: 20px; font-size: 0.76rem; cursor: pointer; font-weight: 600;
+  }
+  .vacio { text-align: center; color: var(--gris-texto); font-size: 0.88rem; padding: 24px 0; }
+</style>
+<link rel="stylesheet" href="/app.css?v=9.9.18">
+<script src="/app-shell.js?v=9.9.18" defer></script>
+</head>
+<body>
+<header>
+  <h1>Proveedores</h1>
+  <div class="emisor" id="etiqueta-emisor">Cargando…</div>
+  <div class="nav">
+    <a id="enlace-inicio" href="#">🏠 Inicio</a>
+    <a id="enlace-inventario" href="#">Inventario</a>
+    <a id="enlace-cxp" href="#">Cuentas por pagar</a>
+  </div>
+</header>
+
+<div class="contenedor">
+  <button class="toggle-form-nuevo" id="btn-nuevo" type="button">+ Agregar proveedor</button>
+
+  <div class="tarjeta" id="form-proveedor">
+    <h2 id="titulo-form">Nuevo proveedor</h2>
+    <input type="hidden" id="proveedor-id">
+
+    <div class="fila-doble">
+      <div>
+        <label>Tipo de identificación</label>
+        <select id="p-tipo">
+          <option value="04">RUC</option>
+          <option value="05">Cédula</option>
+          <option value="06">Pasaporte</option>
+        </select>
+      </div>
+      <div>
+        <label>Identificación</label>
+        <div style="display:flex;gap:6px"><input type="text" id="p-identificacion" placeholder="10 dígitos cédula o 13 RUC" style="flex:1"><button type="button" id="btn-consultar-p" class="btn" style="width:auto">🔎 Consultar</button></div><small id="p-consulta-msg" style="color:#64748b"></small>
+      </div>
+    </div>
+
+    <label>Razón social</label>
+    <input type="text" id="p-razon-social" placeholder="Nombre completo o razón social">
+
+    <label>Nombre comercial (opcional)</label>
+    <input type="text" id="p-nombre-comercial">
+
+    <div class="fila-doble">
+      <div>
+        <label>Teléfono (opcional)</label>
+        <input type="text" id="p-telefono">
+      </div>
+      <div>
+        <label>Email (opcional)</label>
+        <input type="text" id="p-email">
+      </div>
+    </div>
+
+    <label>Dirección (opcional)</label>
+    <input type="text" id="p-direccion">
+
+    <button class="principal" id="btn-guardar" type="button">Guardar proveedor</button>
+    <div class="mensaje" id="mensaje-form"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Proveedores registrados</h2>
+    <div class="buscador-lista">
+      <input type="text" id="filtro" placeholder="Buscar por nombre…">
+    </div>
+    <div id="lista-proveedores"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+const parametros = new URLSearchParams(window.location.search);
+const emisorId = parametros.get('emisorId') || localStorage.getItem('facturador_emisor_id') || window.__FACTURADOR_EMISOR_ID__ || '';
+
+if (emisorId) {
+  document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
+  document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-inventario').href = '/inventario?emisorId=' + encodeURIComponent(emisorId);
+  document.getElementById('enlace-cxp').href = '/cuentas-por-pagar?emisorId=' + encodeURIComponent(emisorId);
+} else {
+  document.getElementById('etiqueta-emisor').textContent = 'Falta emisorId en la URL';
+}
+
+let proveedores = [];
+
+async function cargarProveedores() {
+  if (!emisorId) return;
+  const resp = await fetch('/proveedores?emisorId=' + encodeURIComponent(emisorId) + '&incluirInactivos=true');
+  proveedores = resp.ok ? await resp.json() : [];
+  renderLista();
+}
+
+function renderLista() {
+  const cont = document.getElementById('lista-proveedores');
+  const filtro = document.getElementById('filtro').value.trim().toLowerCase();
+  const filtrados = proveedores.filter((p) => p.razon_social.toLowerCase().includes(filtro));
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = `<div class="vacio">${proveedores.length === 0 ? 'Todavía no hay proveedores.' : 'Sin resultados.'}</div>`;
+    return;
+  }
+
+  cont.innerHTML = filtrados.map((p) => `
+    <div class="fila-proveedor ${p.activo ? '' : 'inactivo'}">
+      <div>
+        <div class="nombre">${p.razon_social}</div>
+        <div class="meta">${p.identificacion}${p.telefono ? ' · ' + p.telefono : ''}${!p.activo ? ' · Inactivo' : ''}</div>
+      </div>
+      <div class="acciones">
+        <button class="secundario" data-accion="editar" data-id="${p.id}">Editar</button>
+        <button class="secundario" data-accion="toggle" data-id="${p.id}">${p.activo ? 'Desactivar' : 'Activar'}</button>
+      </div>
+    </div>
+  `).join('');
+
+  cont.querySelectorAll('[data-accion="editar"]').forEach((btn) => btn.addEventListener('click', () => abrirEdicion(btn.dataset.id)));
+  cont.querySelectorAll('[data-accion="toggle"]').forEach((btn) => btn.addEventListener('click', () => toggleActivo(btn.dataset.id)));
+}
+
+document.getElementById('filtro').addEventListener('input', renderLista);
+
+const formProveedor = document.getElementById('form-proveedor');
+document.getElementById('btn-nuevo').addEventListener('click', () => {
+  limpiarFormulario();
+  formProveedor.classList.add('visible');
+  document.getElementById('titulo-form').textContent = 'Nuevo proveedor';
+  formProveedor.scrollIntoView({ behavior: 'smooth' });
+});
+
+function limpiarFormulario() {
+  document.getElementById('proveedor-id').value = '';
+  document.getElementById('p-tipo').value = '04';
+  document.getElementById('p-identificacion').value = '';
+  document.getElementById('p-razon-social').value = '';
+  document.getElementById('p-nombre-comercial').value = '';
+  document.getElementById('p-telefono').value = '';
+  document.getElementById('p-email').value = '';
+  document.getElementById('p-direccion').value = '';
+  document.getElementById('mensaje-form').className = 'mensaje';
+}
+
+function abrirEdicion(id) {
+  const p = proveedores.find((x) => x.id === id);
+  if (!p) return;
+  document.getElementById('proveedor-id').value = p.id;
+  document.getElementById('p-tipo').value = p.tipo_identificacion;
+  document.getElementById('p-identificacion').value = p.identificacion;
+  document.getElementById('p-razon-social').value = p.razon_social;
+  document.getElementById('p-nombre-comercial').value = p.nombre_comercial || '';
+  document.getElementById('p-telefono').value = p.telefono || '';
+  document.getElementById('p-email').value = p.email || '';
+  document.getElementById('p-direccion').value = p.direccion || '';
+  document.getElementById('titulo-form').textContent = 'Editar proveedor';
+  formProveedor.classList.add('visible');
+  formProveedor.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function consultarProveedorAutomatico(){const tipo=document.getElementById('p-tipo').value;const input=document.getElementById('p-identificacion');const msg=document.getElementById('p-consulta-msg');const v=input.value.replace(/\D/g,'');const esperado=tipo==='05'?10:tipo==='04'?13:0;if(!esperado||v.length!==esperado){msg.textContent=tipo==='05'?'La cédula debe tener 10 dígitos.':tipo==='04'?'El RUC debe tener 13 dígitos.':'';return;}msg.textContent='Consultando…';try{const r=await fetch('/proveedores/consultar?emisorId='+encodeURIComponent(emisorId)+'&tipo='+encodeURIComponent(tipo)+'&identificacion='+encodeURIComponent(v));const d=await r.json();if(!r.ok)throw new Error(d.error||'No se pudo consultar.');if(d.encontrado){const x=d.datos||{};document.getElementById('p-razon-social').value=x.razonSocial||'';document.getElementById('p-nombre-comercial').value=x.nombreComercial||'';document.getElementById('p-direccion').value=x.direccion||'';document.getElementById('p-telefono').value=x.telefono||'';document.getElementById('p-email').value=x.email||'';msg.textContent='✓ Datos encontrados ('+(d.fuente||'consulta')+').';}else msg.textContent=d.mensaje||'No se encontraron datos.';}catch(e){msg.textContent='No fue posible consultar: '+e.message;}}
+document.getElementById('btn-consultar-p').addEventListener('click',consultarProveedorAutomatico);let pt;document.getElementById('p-identificacion').addEventListener('input',()=>{clearTimeout(pt);const tipo=document.getElementById('p-tipo').value,v=document.getElementById('p-identificacion').value.replace(/\D/g,'');const n=tipo==='05'?10:tipo==='04'?13:0;if(n&&v.length===n)pt=setTimeout(consultarProveedorAutomatico,450);});
+
+document.getElementById('btn-guardar').addEventListener('click', async () => {
+  const boton = document.getElementById('btn-guardar');
+  const mensaje = document.getElementById('mensaje-form');
+  mensaje.className = 'mensaje';
+
+  const id = document.getElementById('proveedor-id').value;
+  const identificacion = document.getElementById('p-identificacion').value.trim();
+  const razonSocial = document.getElementById('p-razon-social').value.trim();
+
+  if (!identificacion || !razonSocial) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Completa al menos identificación y razón social.';
+    return;
+  }
+
+  boton.disabled = true; boton.textContent = 'Guardando…';
+  try {
+    let resp;
+    const datosComunes = {
+      razonSocial,
+      nombreComercial: document.getElementById('p-nombre-comercial').value.trim() || undefined,
+      telefono: document.getElementById('p-telefono').value.trim() || undefined,
+      email: document.getElementById('p-email').value.trim() || undefined,
+      direccion: document.getElementById('p-direccion').value.trim() || undefined,
+    };
+
+    if (id) {
+      resp = await fetch('/proveedores/' + id, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosComunes),
+      });
+    } else {
+      resp = await fetch('/proveedores', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emisorId, tipoIdentificacion: document.getElementById('p-tipo').value, identificacion, ...datosComunes }),
+      });
+    }
+
+    const datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || 'Error desconocido.');
+
+    mensaje.className = 'mensaje exito';
+    mensaje.textContent = id ? 'Proveedor actualizado.' : 'Proveedor agregado.';
+    await cargarProveedores();
+    setTimeout(() => { formProveedor.classList.remove('visible'); limpiarFormulario(); }, 900);
+  } catch (err) {
+    mensaje.className = 'mensaje error';
+    mensaje.textContent = 'Error: ' + err.message;
+  } finally {
+    boton.disabled = false; boton.textContent = 'Guardar proveedor';
+  }
+});
+
+async function toggleActivo(id) {
+  const p = proveedores.find((x) => x.id === id);
+  if (!p) return;
+  await fetch('/proveedores/' + id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo: !p.activo }),
+  });
+  await cargarProveedores();
+}
+
+cargarProveedores();
+</script>
+</body>
+</html>
