@@ -1,0 +1,280 @@
+import type { FastifyInstance } from 'fastify';
+import { supabase } from '../db/supabase.js';
+import { obtenerSesion, obtenerRolEnNegocio } from '../auth/sesiones.js';
+import { obtenerPlanSaas, contarEstablecimientos, contarPuntos } from '../services/saas.js';
+
+export async function registrarRutasConfiguracion(app: FastifyInstance) {
+  app.get<{ Querystring: { emisorId?: string } }>('/configuracion/datos', async (request, reply) => {
+    const emisorId = request.query.emisorId;
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const [{ data: emisor }, { data: config }, { data: usuarios }] = await Promise.all([
+      supabase.from('emisores').select('id,ruc,razon_social,nombre_comercial,direccion_matriz,ambiente,obligado_contabilidad').eq('id', emisorId).single(),
+      supabase.from('configuracion_sistema').select('*').eq('emisor_id', emisorId).maybeSingle(),
+      supabase.from('usuarios_emisor').select('user_id,rol').eq('emisor_id', emisorId),
+    ]);
+    return reply.send({ emisor, config, usuarios: usuarios ?? [] });
+  });
+
+  app.patch<{ Body: { emisorId?: string; nombreComercial?: string; razonSocial?: string; direccionMatriz?: string; ambiente?: 'pruebas'|'produccion'; obligadoContabilidad?: boolean; notificacionesActivas?: boolean } }>('/configuracion/guardar', async (request, reply) => {
+    const b = request.body ?? {};
+    if (!b.emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    // El proveedor del sistema es una configuración central protegida. Nunca se acepta desde el navegador.
+    const cambios: Record<string, unknown> = {};
+    if (b.nombreComercial !== undefined) cambios.nombre_comercial = b.nombreComercial.trim() || null;
+    if (b.razonSocial !== undefined) cambios.razon_social = b.razonSocial.trim();
+    if (b.direccionMatriz !== undefined) cambios.direccion_matriz = b.direccionMatriz.trim();
+    if (b.ambiente !== undefined) cambios.ambiente = b.ambiente;
+    if (b.obligadoContabilidad !== undefined) cambios.obligado_contabilidad = b.obligadoContabilidad;
+    if (Object.keys(cambios).length) {
+      const { error } = await supabase.from('emisores').update(cambios).eq('id', b.emisorId);
+      if (error) return reply.status(500).send({ error: error.message });
+    }
+    const { data: existente } = await supabase.from('configuracion_sistema').select('ruc_proveedor_facturacion,nombre_proveedor_facturacion').eq('emisor_id', b.emisorId).maybeSingle();
+    const config = {
+      emisor_id: b.emisorId,
+      // Se conserva el valor histórico, pero el usuario no puede modificarlo desde Configuración.
+      ruc_proveedor_facturacion: existente?.ruc_proveedor_facturacion ?? process.env.RUC_PROVEEDOR_FACTURACION ?? null,
+      nombre_proveedor_facturacion: existente?.nombre_proveedor_facturacion ?? process.env.NOMBRE_PROVEEDOR_FACTURACION ?? 'Proveedor del sistema de facturación',
+      incluir_ruc_proveedor: true,
+      notificaciones_activas: b.notificacionesActivas ?? true,
+    };
+    const { error: e2 } = await supabase.from('configuracion_sistema').upsert(config, { onConflict: 'emisor_id' });
+    if (e2) return reply.status(500).send({ error: e2.message });
+    return reply.send({ ok: true });
+  });
+
+  /** Diagnóstico de configuración inicial: no expone certificados, contraseñas ni secretos. */
+  app.get<{ Querystring: { emisorId?: string } }>('/configuracion/estado-inicial', async (request, reply) => {
+    const emisorId = String(request.query.emisorId ?? '').trim();
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const [{ data: emisor }, { data: matriz }, { data: puntos }, { data: cert }, { data: config }, { data: usuarioAdmin }] = await Promise.all([
+      supabase.from('emisores').select('id,ruc,razon_social,nombre_comercial,direccion_matriz,ambiente').eq('id', emisorId).maybeSingle(),
+      supabase.from('establecimientos_emisor').select('id,codigo,activo').eq('emisor_id', emisorId).eq('tipo_establecimiento','MATRIZ').eq('activo',true).maybeSingle(),
+      supabase.from('puntos_emision').select('id,establecimiento,punto_emision,activo').eq('emisor_id', emisorId).eq('activo',true).limit(1),
+      supabase.from('certificados').select('id,fecha_expiracion,activo').eq('emisor_id', emisorId).eq('activo',true).limit(1).maybeSingle(),
+      supabase.from('configuracion_sistema').select('logo_ride_mime,notificaciones_activas').eq('emisor_id', emisorId).maybeSingle(),
+      supabase.from('usuarios_emisor').select('user_id,rol').eq('emisor_id', emisorId).eq('rol','admin').limit(1).maybeSingle(),
+    ]);
+    if (!emisor) return reply.status(404).send({ error: 'Contribuyente no encontrado.' });
+    const correoConfigurado = Boolean(config?.notificaciones_activas !== undefined);
+    const items = [
+      { clave:'empresa', titulo:'Datos de la empresa', listo:Boolean(emisor.ruc && emisor.razon_social && emisor.direccion_matriz) },
+      { clave:'matriz', titulo:'Matriz 001', listo:Boolean(matriz) },
+      { clave:'punto', titulo:'Punto de emisión activo', listo:Boolean((puntos ?? []).length) },
+      { clave:'firma', titulo:'Firma electrónica', listo:Boolean(cert), detalle: cert?.fecha_expiracion ? `Vence ${String(cert.fecha_expiracion).slice(0,10)}` : undefined },
+      { clave:'correo', titulo:'Notificaciones de correo', listo:correoConfigurado },
+      { clave:'logo', titulo:'Logo del RIDE (opcional)', listo:Boolean(config?.logo_ride_mime), opcional:true },
+      { clave:'administrador', titulo:'Administrador del negocio', listo:Boolean(usuarioAdmin) },
+    ];
+    const obligatorios = items.filter(x => !x.opcional);
+    const completos = obligatorios.filter(x => x.listo).length;
+    return reply.send({ ok:true, emisorId, ambiente:emisor.ambiente, progreso: Math.round((completos / obligatorios.length) * 100), completo: completos === obligatorios.length, items });
+  });
+
+  /** Logo del RIDE: se almacena por contribuyente y nunca se incorpora al XML. */
+  app.post<{ Body: { emisorId?: string; archivoBase64?: string; mime?: string; nombre?: string } }>('/configuracion/logo-ride', async (request, reply) => {
+    const b = request.body ?? {};
+    const emisorId = String(b.emisorId ?? '').trim();
+    const token = request.cookies?.sesion; const sesion = token ? await obtenerSesion(token) : null;
+    if (!sesion) return reply.status(401).send({ error: 'Sesión no válida.' });
+    const rol = await obtenerRolEnNegocio(sesion.userId, emisorId);
+    if (!rol) return reply.status(403).send({ error: 'No tienes acceso a este negocio.' });
+    const mime = String(b.mime ?? '').trim().toLowerCase();
+    const nombre = String(b.nombre ?? 'logo').trim().slice(0, 120) || 'logo';
+    const raw = String(b.archivoBase64 ?? '').trim();
+    if (!emisorId || !raw) return reply.status(400).send({ error: 'Emisor y archivo son obligatorios.' });
+    if (!['image/png','image/jpeg','image/jpg'].includes(mime)) return reply.status(415).send({ error: 'El logo debe estar en formato PNG o JPEG.' });
+    const base64 = raw.includes(',') && raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+    let buffer: Buffer;
+    try { buffer = Buffer.from(base64, 'base64'); } catch { return reply.status(400).send({ error: 'El archivo de imagen no es válido.' }); }
+    if (!buffer.length) return reply.status(400).send({ error: 'El archivo de imagen está vacío.' });
+    if (buffer.length > 1024 * 1024) return reply.status(413).send({ error: 'El logo no puede superar 1 MB.' });
+    // Validación mínima de firma binaria para evitar guardar contenido arbitrario.
+    const png = mime === 'image/png' && buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    const jpg = (mime === 'image/jpeg' || mime === 'image/jpg') && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length-2] === 0xff && buffer[buffer.length-1] === 0xd9;
+    if (!png && !jpg) return reply.status(400).send({ error: 'El contenido no coincide con el formato de imagen declarado.' });
+    const { data: emisor } = await supabase.from('emisores').select('id').eq('id', emisorId).maybeSingle();
+    if (!emisor) return reply.status(404).send({ error: 'Contribuyente no encontrado.' });
+    const { error } = await supabase.from('configuracion_sistema').upsert({
+      emisor_id: emisorId,
+      logo_ride_base64: base64,
+      logo_ride_mime: mime === 'image/jpg' ? 'image/jpeg' : mime,
+      logo_ride_nombre: nombre,
+      logo_ride_actualizado_at: new Date().toISOString(),
+    }, { onConflict: 'emisor_id' });
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ ok: true, nombre, mime: mime === 'image/jpg' ? 'image/jpeg' : mime, bytes: buffer.length });
+  });
+
+  app.delete<{ Querystring: { emisorId?: string } }>('/configuracion/logo-ride', async (request, reply) => {
+    const emisorId = String(request.query.emisorId ?? '').trim();
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const token = request.cookies?.sesion; const sesion = token ? await obtenerSesion(token) : null;
+    if (!sesion) return reply.status(401).send({ error: 'Sesión no válida.' });
+    const rol = await obtenerRolEnNegocio(sesion.userId, emisorId);
+    if (!rol) return reply.status(403).send({ error: 'No tienes acceso a este negocio.' });
+    const { error } = await supabase.from('configuracion_sistema').update({ logo_ride_base64: null, logo_ride_mime: null, logo_ride_nombre: null, logo_ride_actualizado_at: new Date().toISOString() }).eq('emisor_id', emisorId);
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ ok: true, mensaje: 'Logo eliminado. Los nuevos RIDE usarán el encabezado estándar.' });
+  });
+
+  // Establecimientos operativos del emisor. Esto administra la configuración interna;
+  // el alta legal del establecimiento en el RUC sigue correspondiendo al SRI.
+  app.get<{ Querystring: { emisorId?: string } }>('/configuracion/establecimientos', async (request, reply) => {
+    const emisorId = request.query.emisorId;
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const { data, error } = await supabase.from('establecimientos_emisor').select('*').eq('emisor_id', emisorId).order('codigo');
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ items: data ?? [] });
+  });
+
+  app.post<{ Body: { emisorId?: string; codigo?: string; tipoEstablecimiento?: 'MATRIZ'|'SUCURSAL'; nombreComercial?: string; direccion?: string } }>('/configuracion/establecimientos', async (request, reply) => {
+    const b = request.body ?? {}; const codigo = String(b.codigo ?? '').replace(/\D/g, '').padStart(3, '0'); const tipoEstablecimiento = b.tipoEstablecimiento === 'MATRIZ' ? 'MATRIZ' : 'SUCURSAL';
+    if (!b.emisorId || !/^\d{3}$/.test(codigo) || !String(b.direccion ?? '').trim()) return reply.status(400).send({ error: 'Código de establecimiento de 3 dígitos y dirección son obligatorios.' });
+    const plan = await obtenerPlanSaas(b.emisorId);
+    const usadosEst = await contarEstablecimientos(b.emisorId);
+    if (plan && usadosEst >= Number(plan.max_establecimientos ?? 9999)) return reply.status(409).send({ error: `El plan ${plan.nombre} permite hasta ${plan.max_establecimientos} establecimientos activos.` });
+    if (tipoEstablecimiento === 'MATRIZ') { const { data: matriz } = await supabase.from('establecimientos_emisor').select('id').eq('emisor_id', b.emisorId).eq('tipo_establecimiento','MATRIZ').maybeSingle(); if (matriz) return reply.status(409).send({ error: 'Este RUC ya tiene una matriz. Use tipo Sucursal para agregar otro establecimiento.' }); }
+    const { data, error } = await supabase.from('establecimientos_emisor').insert({ emisor_id: b.emisorId, codigo, tipo_establecimiento: tipoEstablecimiento, nombre_comercial: String(b.nombreComercial ?? '').trim() || null, direccion: String(b.direccion).trim(), activo: true }).select('*').single();
+    if (error || !data) return reply.status(500).send({ error: error?.message ?? 'No se pudo crear el establecimiento.' });
+    return reply.status(201).send(data);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { nombreComercial?: string; direccion?: string; tipoEstablecimiento?: 'MATRIZ'|'SUCURSAL'; activo?: boolean } }>('/configuracion/establecimientos/:id', async (request, reply) => {
+    const b=request.body??{}; const cambios:Record<string,unknown>={};
+    if (b.nombreComercial !== undefined) cambios.nombre_comercial=String(b.nombreComercial).trim()||null;
+    if (b.direccion !== undefined) cambios.direccion=String(b.direccion).trim();
+    if (b.tipoEstablecimiento !== undefined) { const tipo=b.tipoEstablecimiento==='MATRIZ'?'MATRIZ':'SUCURSAL'; if(tipo==='MATRIZ'){ const {data:otra}=await supabase.from('establecimientos_emisor').select('id').eq('emisor_id',(await supabase.from('establecimientos_emisor').select('emisor_id').eq('id',request.params.id).single()).data?.emisor_id||'').eq('tipo_establecimiento','MATRIZ').neq('id',request.params.id).maybeSingle(); if(otra) return reply.status(409).send({error:'El RUC ya tiene otra matriz.'}); } cambios.tipo_establecimiento=tipo; }
+    if (b.activo !== undefined) cambios.activo=!!b.activo;
+    if (!Object.keys(cambios).length) return reply.status(400).send({error:'No se enviaron cambios.'});
+    const {data:estActual}=await supabase.from('establecimientos_emisor').select('id,emisor_id,codigo,activo').eq('id',request.params.id).maybeSingle();
+    if(!estActual)return reply.status(404).send({error:'Establecimiento no encontrado.'});
+    if(b.activo===true && !estActual.activo){ const plan=await obtenerPlanSaas(estActual.emisor_id); const usados=await contarEstablecimientos(estActual.emisor_id); if(plan && usados>=Number(plan.max_establecimientos??9999)) return reply.status(409).send({error:`El plan ${plan.nombre} permite hasta ${plan.max_establecimientos} establecimientos activos.`}); }
+    const {error}=await supabase.from('establecimientos_emisor').update(cambios).eq('id',request.params.id);
+    if(error)return reply.status(500).send({error:error.message});
+    if(b.activo===false) await supabase.from('puntos_emision').update({activo:false}).eq('emisor_id',estActual.emisor_id).eq('establecimiento',estActual.codigo);
+    return reply.send({ok:true});
+  });
+
+  app.delete<{ Params: { id: string } }>('/configuracion/establecimientos/:id', async (request, reply) => {
+    const {data:est}=await supabase.from('establecimientos_emisor').select('id,emisor_id,codigo').eq('id',request.params.id).maybeSingle();
+    if(!est)return reply.status(404).send({error:'Establecimiento no encontrado.'});
+    const {data:pts}=await supabase.from('puntos_emision').select('id').eq('emisor_id',est.emisor_id).eq('establecimiento',est.codigo);
+    if((pts??[]).length){ await supabase.from('establecimientos_emisor').update({activo:false}).eq('id',est.id); await supabase.from('puntos_emision').update({activo:false}).eq('emisor_id',est.emisor_id).eq('establecimiento',est.codigo); return reply.send({ok:true,modo:'desactivado',mensaje:'El establecimiento tiene puntos de emisión y/o historial. Se desactivó para conservar la trazabilidad.'}); }
+    const {error}=await supabase.from('establecimientos_emisor').delete().eq('id',est.id); if(error)return reply.status(500).send({error:error.message}); return reply.send({ok:true,modo:'eliminado',mensaje:'Establecimiento eliminado.'});
+  });
+
+  app.get<{ Querystring: { emisorId?: string; establecimiento?: string } }>('/configuracion/puntos-emision', async (request, reply) => {
+    const { emisorId, establecimiento }=request.query; if(!emisorId)return reply.status(400).send({error:'Falta emisorId.'});
+    let q=supabase.from('puntos_emision').select('*').eq('emisor_id',emisorId).order('establecimiento').order('punto_emision');
+    if(establecimiento)q=q.eq('establecimiento',establecimiento);
+    const {data,error}=await q; if(error)return reply.status(500).send({error:error.message}); return reply.send({items:data??[]});
+  });
+
+  app.post<{ Body: { emisorId?: string; establecimiento?: string; puntoEmision?: string; direccion?: string } }>('/configuracion/puntos-emision', async (request, reply) => {
+    const b=request.body??{}; const establecimiento=String(b.establecimiento??'').replace(/\D/g,'').padStart(3,'0'); const puntoEmision=String(b.puntoEmision??'').replace(/\D/g,'').padStart(3,'0');
+    if(!b.emisorId||!/^\d{3}$/.test(establecimiento)||!/^\d{3}$/.test(puntoEmision))return reply.status(400).send({error:'Establecimiento y punto de emisión deben tener 3 dígitos.'});
+    const plan = await obtenerPlanSaas(b.emisorId);
+    const usadosPuntos = await contarPuntos(b.emisorId);
+    if (plan && usadosPuntos >= Number(plan.max_puntos_emision ?? 9999)) return reply.status(409).send({ error: `El plan ${plan.nombre} permite hasta ${plan.max_puntos_emision} puntos de emisión activos.` });
+    const {data:est}=await supabase.from('establecimientos_emisor').select('direccion,activo').eq('emisor_id',b.emisorId).eq('codigo',establecimiento).maybeSingle();
+    if(!est)return reply.status(400).send({error:'Primero registra el establecimiento en Configuración.'});
+    if(est.activo===false)return reply.status(400).send({error:'El establecimiento está inactivo.'});
+    // Los puntos pueden permanecer activos simultáneamente: distintos cajeros
+    // pueden trabajar en paralelo y cada punto conserva su numeración independiente.
+    const {data,error}=await supabase.from('puntos_emision').insert({emisor_id:b.emisorId,establecimiento,punto_emision:puntoEmision,direccion:String(b.direccion??est.direccion).trim(),activo:true}).select('*').single();
+    if(error||!data)return reply.status(500).send({error:error?.message??'No se pudo crear el punto de emisión.'});
+    return reply.status(201).send(data);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { direccion?: string; activo?: boolean } }>('/configuracion/puntos-emision/:id', async (request, reply) => {
+    const b=request.body??{}; const {data:punto}=await supabase.from('puntos_emision').select('id,emisor_id,establecimiento').eq('id',request.params.id).maybeSingle();
+    if(!punto)return reply.status(404).send({error:'Punto de emisión no encontrado.'});
+    // NO se desactivan los demás puntos al activar este.
+    // Todos los puntos autorizados pueden estar activos al mismo tiempo.
+    const cambios:Record<string,unknown>={}; if(b.direccion!==undefined)cambios.direccion=String(b.direccion).trim(); if(b.activo!==undefined)cambios.activo=!!b.activo;
+    if(b.activo===true){ const {data:actual}=await supabase.from('puntos_emision').select('activo,emisor_id').eq('id',request.params.id).maybeSingle(); if(actual && !actual.activo){ const plan=await obtenerPlanSaas(actual.emisor_id); const usados=await contarPuntos(actual.emisor_id); if(plan && usados>=Number(plan.max_puntos_emision??9999)) return reply.status(409).send({error:`El plan ${plan.nombre} permite hasta ${plan.max_puntos_emision} puntos de emisión activos.`}); }}
+    const {error}=await supabase.from('puntos_emision').update(cambios).eq('id',request.params.id); if(error)return reply.status(500).send({error:error.message});
+    return reply.send({ok:true});
+  });
+
+  app.delete<{ Params: { id: string } }>('/configuracion/puntos-emision/:id', async (request, reply) => {
+    const {data:punto}=await supabase.from('puntos_emision').select('id').eq('id',request.params.id).maybeSingle();
+    if(!punto)return reply.status(404).send({error:'Punto de emisión no encontrado.'});
+    const {count}=await supabase.from('comprobantes').select('id',{count:'exact',head:true}).eq('punto_emision_id',request.params.id);
+    if(Number(count??0)>0){ const {error}=await supabase.from('puntos_emision').update({activo:false}).eq('id',request.params.id); if(error)return reply.status(500).send({error:error.message}); return reply.send({ok:true,modo:'desactivado',mensaje:'El punto tiene comprobantes históricos. Se desactivó para conservar la trazabilidad tributaria.'}); }
+    const {error}=await supabase.from('puntos_emision').delete().eq('id',request.params.id); if(error)return reply.status(500).send({error:error.message}); return reply.send({ok:true,modo:'eliminado',mensaje:'Punto de emisión eliminado.'});
+  });
+
+  app.get<{ Querystring: { emisorId?: string } }>('/notificaciones', async (request, reply) => {
+    const emisorId = request.query.emisorId;
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const token = request.cookies?.sesion;
+    const sesion = token ? await obtenerSesion(token) : null;
+    if (!sesion) return reply.status(401).send({ error: 'Sesión no válida.' });
+    const rol = await obtenerRolEnNegocio(sesion.userId, emisorId);
+    if (!rol) return reply.status(403).send({ error: 'No tienes acceso a este negocio.' });
+    const [stock, rechazados, correos, leidas] = await Promise.all([
+      supabase.from('productos').select('id,nombre,stock_actual,stock_critico,stock_minimo').eq('emisor_id', emisorId).eq('activo', true),
+      supabase.from('comprobantes').select('id,secuencial,motivo_error,created_at').eq('emisor_id', emisorId).in('estado',['rechazado','devuelto']).order('created_at',{ascending:false}).limit(20),
+      supabase.from('email_envios').select('id,comprobante_id,destinatario,detalle,created_at').eq('estado','error').order('created_at',{ascending:false}).limit(50),
+      supabase.from('notificaciones_leidas').select('notificacion_key,read_at').eq('user_id', sesion.userId).eq('emisor_id', emisorId),
+    ]);
+    const emailRows = correos.data ?? [];
+    const emailComprobanteIds = [...new Set(emailRows.map(x => x.comprobante_id).filter(Boolean))];
+    let emailPermitidos = new Set<string>();
+    if (emailComprobanteIds.length) {
+      const { data: emailComprobantes } = await supabase.from('comprobantes').select('id').eq('emisor_id', emisorId).in('id', emailComprobanteIds);
+      emailPermitidos = new Set((emailComprobantes ?? []).map(x => x.id));
+    }
+    const leidasSet = new Set((leidas.data ?? []).map(x => x.notificacion_key));
+    const items: Array<{id:string;tipo:string;prioridad:string;titulo:string;detalle:string;fecha?:string;leida:boolean}> = [];
+    for (const p of stock.data ?? []) {
+      const actual=Number(p.stock_actual??0), crit=Number(p.stock_critico??0), min=Number(p.stock_minimo??0);
+      if (actual<=crit) { const id=`stock:${p.id}:stop`; items.push({id,tipo:'inventario',prioridad:'alta',titulo:`STOP: ${p.nombre}`,detalle:`Stock ${actual}. Nivel crítico ${crit}.`,leida:leidasSet.has(id)}); }
+      else if (actual<=min) { const id=`stock:${p.id}:bajo`; items.push({id,tipo:'inventario',prioridad:'media',titulo:`Stock bajo: ${p.nombre}`,detalle:`Stock ${actual}. Mínimo ${min}.`,leida:leidasSet.has(id)}); }
+    }
+    for (const r of rechazados.data ?? []) { const id=`sri:${r.id}`; items.push({id,tipo:'sri',prioridad:'alta',titulo:`Comprobante rechazado ${r.secuencial??''}`.trim(),detalle:r.motivo_error??'Revisar respuesta del SRI.',fecha:r.created_at,leida:leidasSet.has(id)}); }
+    for (const e of emailRows.filter(x => emailPermitidos.has(x.comprobante_id))) { const id=`correo:${e.id}`; items.push({id,tipo:'correo',prioridad:'media',titulo:'Correo no enviado',detalle:e.detalle??`No se pudo enviar a ${e.destinatario}.`,fecha:e.created_at,leida:leidasSet.has(id)}); }
+    items.sort((a,b)=>Number(a.leida)-Number(b.leida) || ({alta:0,media:1,baja:2}[a.prioridad]??9)-({alta:0,media:1,baja:2}[b.prioridad]??9) || String(b.fecha??'').localeCompare(String(a.fecha??'')));
+    return reply.send({ items: items.slice(0,40), total: items.length, noLeidas: items.filter(x=>!x.leida).length });
+  });
+
+  app.post<{ Body: { emisorId?: string; notificacionId?: string } }>('/notificaciones/leer', async (request, reply) => {
+    const { emisorId, notificacionId } = request.body ?? {};
+    if (!emisorId || !notificacionId) return reply.status(400).send({ error: 'Faltan emisorId o notificacionId.' });
+    const token = request.cookies?.sesion;
+    const sesion = token ? await obtenerSesion(token) : null;
+    if (!sesion) return reply.status(401).send({ error: 'Sesión no válida.' });
+    const rol = await obtenerRolEnNegocio(sesion.userId, emisorId);
+    if (!rol) return reply.status(403).send({ error: 'No tienes acceso a este negocio.' });
+    const { error } = await supabase.from('notificaciones_leidas').upsert({ user_id: sesion.userId, emisor_id: emisorId, notificacion_key: notificacionId, read_at: new Date().toISOString() }, { onConflict: 'user_id,emisor_id,notificacion_key' });
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ ok: true });
+  });
+
+  app.post<{ Body: { emisorId?: string } }>('/notificaciones/leer-todas', async (request, reply) => {
+    const { emisorId } = request.body ?? {};
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    const token = request.cookies?.sesion;
+    const sesion = token ? await obtenerSesion(token) : null;
+    if (!sesion) return reply.status(401).send({ error: 'Sesión no válida.' });
+    const rol = await obtenerRolEnNegocio(sesion.userId, emisorId);
+    if (!rol) return reply.status(403).send({ error: 'No tienes acceso a este negocio.' });
+    const [stock, rechazados, correos] = await Promise.all([
+      supabase.from('productos').select('id,stock_actual,stock_critico,stock_minimo').eq('emisor_id', emisorId).eq('activo', true),
+      supabase.from('comprobantes').select('id').eq('emisor_id', emisorId).in('estado',['rechazado','devuelto']).limit(50),
+      supabase.from('email_envios').select('id,comprobante_id').eq('estado','error').limit(100),
+    ]);
+    const ids:string[] = [];
+    for (const p of stock.data ?? []) { const actual=Number(p.stock_actual??0), crit=Number(p.stock_critico??0), min=Number(p.stock_minimo??0); if(actual<=crit) ids.push(`stock:${p.id}:stop`); else if(actual<=min) ids.push(`stock:${p.id}:bajo`); }
+    for (const r of rechazados.data ?? []) ids.push(`sri:${r.id}`);
+    const emailIds=[...new Set((correos.data??[]).map(e=>e.comprobante_id).filter(Boolean))];
+    let emailOk=new Set<string>();
+    if(emailIds.length){const {data:ec}=await supabase.from('comprobantes').select('id').eq('emisor_id',emisorId).in('id',emailIds);emailOk=new Set((ec??[]).map(x=>x.id));}
+    for (const e of (correos.data ?? []).filter(x=>emailOk.has(x.comprobante_id))) ids.push(`correo:${e.id}`);
+    const rows = ids.map(id => ({ user_id: sesion.userId, emisor_id: emisorId, notificacion_key: id, read_at: new Date().toISOString() }));
+    if (rows.length) { const { error } = await supabase.from('notificaciones_leidas').upsert(rows, { onConflict: 'user_id,emisor_id,notificacion_key' }); if (error) return reply.status(500).send({ error: error.message }); }
+    return reply.send({ ok: true, total: rows.length });
+  });
+}
