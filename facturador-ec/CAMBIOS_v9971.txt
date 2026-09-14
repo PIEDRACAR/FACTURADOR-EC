@@ -1,8 +1,0 @@
-CONTSERTRIB v9.9.71 — LIMPIEZA CONFIGURACIÓN DEL CLIENTE
-
-- Se eliminó de public/configuracion.html el bloque “Proveedor del sistema”.
-- La configuración del proveedor SaaS continúa siendo central y protegida en el backend; no se elimina esa funcionalidad.
-- Se eliminaron las referencias JavaScript a los campos visuales del proveedor para evitar elementos inexistentes.
-- No se modificó SRI, XML, RIDE/PDF, Resend, firma electrónica, autenticación, inventario, contabilidad, POS ni PayPhone.
-- No requiere migración SQL.
-- Versión: 0.1.9-v9.9.71
