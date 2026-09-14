@@ -1,0 +1,15 @@
+CONTSERTRIB v9.9.70
+CORRECCIÓN DE ACCESO Y CREDENCIALES
+
+Correcciones:
+- El login backend ahora envía apikey y Authorization de forma tipada.
+- Si un correo ya existe en Supabase Auth durante el registro, se actualiza
+  explícitamente su contraseña con la contraseña recién entregada al cliente.
+- Se confirma el correo del usuario existente para evitar bloqueos de acceso.
+- Se mantiene el aislamiento de empresas y las funciones existentes.
+- No se elimina Resend ni las funciones SRI, facturación, contabilidad, inventario,
+  POS, SaaS, PayPhone, ROOT ni firma electrónica.
+
+IMPORTANTE:
+El build anterior v9.9.68 falló en src/auth/sesiones.ts por TS2769 al pasar
+env.supabaseServiceRoleKey a fetch. Esta versión corrige ese punto.
