@@ -1,7 +1,0 @@
-CONTSERTRIB v9.9.73 — CORRECCIÓN XSD FACTURAS
-
-- Corregida la inserción de <infoAdicional> para que no se creen dos bloques cuando la librería ya genera uno.
-- Si ya existe infoAdicional, se agrega/reemplaza únicamente el campo “RUC Proveedor” dentro del bloque existente.
-- Mejorado el detalle de errores XSD: ya no se muestra [object Object]; se extraen código, mensaje, línea y columna cuando la librería los entrega.
-- No se eliminan funcionalidades ni se modifica el flujo de Resend, firma electrónica, SRI, inventario, contabilidad, POS o SaaS.
-- No requiere migración SQL.
