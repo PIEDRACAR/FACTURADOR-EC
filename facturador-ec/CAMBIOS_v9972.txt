@@ -1,0 +1,15 @@
+CONTSERTRIB v9.9.72 - CORRECCIÓN FIRMA ELECTRÓNICA
+
+Problema corregido:
+Supabase devolvía: Could not find the 'updated_at' column of 'certificados' in the schema cache.
+
+Corrección principal:
+- El backend de configuración de firma ya no exige la columna certificados.updated_at.
+- Consulta de estado de firma usa las columnas existentes.
+- Guardado de certificado ya no intenta escribir updated_at.
+- Desactivación ya no intenta escribir updated_at.
+- Se conserva created_at cuando está disponible.
+- No se elimina ninguna funcionalidad de firma electrónica ni cifrado.
+
+SQL opcional:
+sql/migracion_v9972_certificados_compatibilidad.sql agrega updated_at a certificados para instalaciones que quieran conservarla, pero NO es necesario para que el backend funcione.
