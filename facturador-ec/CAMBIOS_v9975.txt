@@ -1,0 +1,13 @@
+CONTSERTRIB v9.9.75 — UX OPERATIVO
+
+Objetivo: interfaz más limpia y ordenada para cajero y contador.
+
+1. Comprobantes electrónicos: workspace de dos paneles en escritorio; formulario y listado trabajan en áreas independientes.
+2. Barra de acciones del comprobante permanece visible.
+3. Tabs de comprobantes se mantienen arriba y accesibles.
+4. Listado de comprobantes recientes tiene scroll interno.
+5. Formularios y tablas son más compactos para reducir desplazamiento.
+6. POS: resumen y pagos permanecen visibles en escritorio; búsquedas conservan prioridad visual.
+7. Móvil: se adapta a una sola columna y conserva acciones accesibles.
+8. No se modifica la lógica tributaria ni los endpoints de emisión.
+9. No requiere migración SQL.
