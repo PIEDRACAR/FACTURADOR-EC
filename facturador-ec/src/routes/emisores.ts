@@ -37,10 +37,10 @@ export async function registrarRutasEmisores(app: FastifyInstance) {
     try {
       const resultado = await procesarNotificacionPayphone(request.body ?? {});
       // Payphone espera esta confirmación JSON para considerar consumida la notificación.
-      return reply.send({ Response: true, ErrorCode: '000', ok: true, recibido: true, resultado: { pagoId: resultado.pago?.id ?? null, duplicado: Boolean(resultado.duplicado) } });
+      return reply.send({ Response: true, ErrorCode: '000' });
     } catch (err) {
       request.log.error({ err }, 'Notificación Payphone no procesada');
-      return reply.status(400).send({ Response: false, ErrorCode: '222', ok: false, recibido: false, error: err instanceof Error ? err.message : String(err) });
+      return reply.status(400).send({ Response: false, ErrorCode: '222' });
     }
   };
   app.post('/pagos/payphone/notificacion', notificacionPayphone);
