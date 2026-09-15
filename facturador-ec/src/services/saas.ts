@@ -18,6 +18,7 @@ export type PlanSaas = {
   incluye_ats: boolean;
   incluye_carga_electronica: boolean;
   incluye_reportes_avanzados: boolean;
+  incluye_ticket_pos: boolean;
 };
 
 export async function obtenerPlanSaas(emisorId: string): Promise<PlanSaas | null> {
@@ -62,12 +63,19 @@ export async function comprobarLimiteDocumentos(emisorId: string): Promise<{ ok:
   return { ok: true, usados, limite, plan: plan.codigo };
 }
 
-export async function comprobarCaracteristica(emisorId: string, caracteristica: 'ats' | 'inventario'): Promise<{ ok: boolean; plan?: PlanSaas; mensaje?: string }> {
+export async function comprobarCaracteristica(emisorId: string, caracteristica: 'ats' | 'inventario' | 'ticket_pos'): Promise<{ ok: boolean; plan?: PlanSaas; mensaje?: string }> {
   const plan = await obtenerPlanSaas(emisorId);
   if (!plan) return { ok: true };
-  const ok = caracteristica === 'ats' ? plan.incluye_ats : plan.incluye_inventario;
-  if (!ok) return { ok: false, plan, mensaje: `La función ${caracteristica.toUpperCase()} no está incluida en el plan ${plan.nombre}.` };
+  const ok = caracteristica === 'ats' ? plan.incluye_ats : caracteristica === 'inventario' ? plan.incluye_inventario : plan.incluye_ticket_pos !== false;
+  if (!ok) return { ok: false, plan, mensaje: `La función ${caracteristica === 'ticket_pos' ? 'TICKET / POS' : caracteristica.toUpperCase()} no está incluida en el plan ${plan.nombre}.` };
   return { ok: true, plan };
+}
+
+export async function comprobarTicketPosGlobal(): Promise<{ ok: boolean; mensaje?: string }> {
+  const { data, error } = await supabase.from('configuracion_proveedor').select('ticket_pos_habilitado').eq('id', 1).maybeSingle();
+  if (error) throw new Error(`No se pudo consultar la configuración global de Ticket POS: ${error.message}`);
+  if (data && data.ticket_pos_habilitado === false) return { ok: false, mensaje: 'El módulo Ticket / Venta POS está deshabilitado por el Panel Maestro.' };
+  return { ok: true };
 }
 
 export async function contarContribuyentes(cuentaId: string) {

@@ -612,6 +612,23 @@ function calcularTotales() {
 
 // ---------- Inicialización ----------
 let puntoEmisionSeleccionado = '';
+async function cargarConfiguracionTicketPOS(){
+  if(!emisorId) return;
+  const btn=document.getElementById('modo-ticket');
+  if(!btn) return;
+  try{
+    const r=await fetch('/pos/configuracion-ticket?emisorId='+encodeURIComponent(emisorId),{credentials:'same-origin'});
+    const d=await r.json();
+    const habilitado=r.ok && d.habilitado===true;
+    btn.style.display=habilitado?'inline-flex':'none';
+    if(!habilitado && modoEmision==='ticket') aplicarModoEmision('factura');
+  }catch(e){
+    // Ante un fallo de consulta se conserva la seguridad: no se habilita el modo Ticket.
+    btn.style.display='none';
+    if(modoEmision==='ticket') aplicarModoEmision('factura');
+  }
+}
+
 async function cargarConfiguracionIVA(){
   if(!emisorId) return;
   try{
@@ -658,6 +675,7 @@ if (!emisorId) {
   document.getElementById('etiqueta-emisor').textContent = 'Sin negocio configurado';
 } else {
   cargarConfiguracionIVA();
+  cargarConfiguracionTicketPOS();
   document.getElementById('etiqueta-emisor').textContent = 'ID de negocio: ' + emisorId;
   document.getElementById('enlace-inicio').href = '/?emisorId=' + encodeURIComponent(emisorId);
   document.getElementById('enlace-inventario').href = '/inventario?emisorId=' + encodeURIComponent(emisorId);

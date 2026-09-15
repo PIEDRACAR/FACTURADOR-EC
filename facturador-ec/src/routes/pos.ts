@@ -9,7 +9,7 @@ import { contabilizarVenta } from '../services/motorContable.js';
 import { enviarComprobantePorCorreo } from '../services/email.js';
 
 import { fechaEmisionEcuador, fechaIsoEcuador } from '../utils/fechaEcuador.js';
-import { comprobarLimiteDocumentos } from '../services/saas.js';
+import { comprobarLimiteDocumentos, comprobarCaracteristica, comprobarTicketPosGlobal } from '../services/saas.js';
 /**
  * Este endpoint es el puente entre "lo que el cajero ve en pantalla" (el
  * carrito) y el motor de facturación ya probado en `services/facturacion.ts`.
@@ -96,6 +96,18 @@ function redondear(valor: number): number { return Math.round(valor * 100) / 100
 function emailValido(v: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
 export async function registrarRutasPos(app: FastifyInstance) {
+  app.get<{ Querystring: { emisorId?: string } }>('/pos/configuracion-ticket', async (request, reply) => {
+    const emisorId = String(request.query.emisorId ?? '').trim();
+    if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
+    try {
+      const global = await comprobarTicketPosGlobal();
+      const plan = await comprobarCaracteristica(emisorId, 'ticket_pos');
+      return reply.send({ habilitado: global.ok && plan.ok, global: global.ok, plan: plan.ok, mensaje: !global.ok ? global.mensaje : (!plan.ok ? plan.mensaje : null) });
+    } catch (e) {
+      return reply.status(500).send({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
   app.get<{ Querystring: { emisorId?: string } }>('/pos/configuracion-iva', async (request, reply) => {
     const emisorId = request.query.emisorId;
     if (!emisorId) return reply.status(400).send({ error: 'Falta emisorId.' });
@@ -273,6 +285,15 @@ export async function registrarRutasPos(app: FastifyInstance) {
     }
 
     const modo = body.modo === 'ticket' ? 'ticket' : 'factura';
+    // El Ticket POS se controla desde el Panel Maestro a dos niveles:
+    // habilitación global del proveedor + inclusión en el plan del cliente.
+    // La validación es de backend; ocultar el botón no es suficiente.
+    if (modo === 'ticket') {
+      const global = await comprobarTicketPosGlobal();
+      if (!global.ok) return reply.status(403).send({ error: global.mensaje });
+      const feature = await comprobarCaracteristica(body.emisorId, 'ticket_pos');
+      if (!feature.ok) return reply.status(402).send({ error: feature.mensaje, plan: feature.plan?.nombre });
+    }
     // Los tickets internos/POS no son comprobantes electrónicos SRI y por tanto
     // no consumen el cupo de documentos electrónicos del plan.
     if (modo === 'factura') {

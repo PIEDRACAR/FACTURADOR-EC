@@ -216,7 +216,7 @@ export async function registrarRutasProveedor(app: FastifyInstance) {
     return reply.send(data ?? []);
   });
 
-  app.patch<{ Params: { id: string }; Body: { nombre?: string; descripcion?: string; precioMensual?: number; precioAnual?: number; periodicidad?: 'mensual'|'anual'; activo?: boolean; maxDocumentosMes?: number | null; maxDocumentosAnio?: number | null; maxContribuyentes?: number; maxEstablecimientos?: number; maxPuntosEmision?: number; maxUsuarios?: number; incluyeInventario?: boolean; incluyeAts?: boolean; incluyeCargaElectronica?: boolean; incluyeReportesAvanzados?: boolean } }>('/proveedor/planes/:id', async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { nombre?: string; descripcion?: string; precioMensual?: number; precioAnual?: number; periodicidad?: 'mensual'|'anual'; activo?: boolean; maxDocumentosMes?: number | null; maxDocumentosAnio?: number | null; maxContribuyentes?: number; maxEstablecimientos?: number; maxPuntosEmision?: number; maxUsuarios?: number; incluyeInventario?: boolean; incluyeAts?: boolean; incluyeCargaElectronica?: boolean; incluyeReportesAvanzados?: boolean; incluyeTicketPos?: boolean } }>('/proveedor/planes/:id', async (request, reply) => {
     if (!await exigirProveedor(request, reply)) return;
     const b = request.body ?? {};
     const cambios: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -246,6 +246,7 @@ export async function registrarRutasProveedor(app: FastifyInstance) {
     if (b.incluyeAts !== undefined) cambios.incluye_ats = Boolean(b.incluyeAts);
     if (b.incluyeCargaElectronica !== undefined) cambios.incluye_carga_electronica = Boolean(b.incluyeCargaElectronica);
     if (b.incluyeReportesAvanzados !== undefined) cambios.incluye_reportes_avanzados = Boolean(b.incluyeReportesAvanzados);
+    if (b.incluyeTicketPos !== undefined) cambios.incluye_ticket_pos = Boolean(b.incluyeTicketPos);
     const { data, error } = await supabase.from('planes_suscripcion').update(cambios).eq('id', request.params.id).select('*').single();
     if (error) return reply.status(500).send({ error: error.message });
     return reply.send(data);
@@ -286,6 +287,23 @@ export async function registrarRutasProveedor(app: FastifyInstance) {
     const countMap = new Map<string, number>();
     for (const c of allContribs ?? []) if (c.activo) countMap.set(c.cuenta_id, (countMap.get(c.cuenta_id) ?? 0) + 1);
     return reply.send((emisores ?? []).filter(e => { const c:any=contribMap.get(e.id); return !!c?.activo && c?.cuentas_cliente_saas?.estado !== 'eliminada'; }).map(e => { const c:any=contribMap.get(e.id); return { ...e, suscripcion: subMap.get(e.id) ?? null, certificado: certMap.get(e.id) ?? null, configuracionPendiente: !certMap.has(e.id), cuenta: c?.cuentas_cliente_saas ?? null, contribuyentes: c?.cuenta_id ? countMap.get(c.cuenta_id) ?? 1 : 1 }; }));
+  });
+
+  // Configuración global de módulos administrables desde Panel Maestro. Solo ROOT.
+  app.get('/proveedor/configuracion-modulos', async (request, reply) => {
+    if (!await exigirProveedor(request, reply)) return;
+    const { data, error } = await supabase.from('configuracion_proveedor').select('id,ticket_pos_habilitado,updated_at').eq('id', 1).maybeSingle();
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ ticketPosHabilitado: data?.ticket_pos_habilitado !== false, actualizadoAt: data?.updated_at ?? null });
+  });
+
+  app.patch<{ Body: { ticketPosHabilitado?: boolean } }>('/proveedor/configuracion-modulos', async (request, reply) => {
+    const auth = await exigirProveedor(request, reply);
+    if (!auth) return;
+    if (request.body?.ticketPosHabilitado === undefined) return reply.status(400).send({ error: 'Debes indicar ticketPosHabilitado.' });
+    const { data, error } = await supabase.from('configuracion_proveedor').upsert({ id: 1, ticket_pos_habilitado: Boolean(request.body.ticketPosHabilitado), actualizado_por: auth.userId ?? null, updated_at: new Date().toISOString() }, { onConflict: 'id' }).select('id,ticket_pos_habilitado,updated_at').single();
+    if (error) return reply.status(500).send({ error: error.message });
+    return reply.send({ ok: true, ticketPosHabilitado: data.ticket_pos_habilitado, actualizadoAt: data.updated_at });
   });
 
   // Configuración de notificaciones administrativas. Solo ROOT puede leer/modificarla.

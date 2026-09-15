@@ -1,3 +1,8 @@
+
+## v9.9.98 — Reparación Ticket POS
+- Corrige la restricción `comprobantes_estado_check` para permitir el estado interno `registrado` de tickets.
+- `crear_venta` crea tickets directamente en estado `registrado`; las facturas continúan iniciando en `generado`.
+- No modifica ni elimina datos históricos.
 # CONTSERTRIB v9.9.84
 
 ## SaaS · PayPhone · Resend · Panel Maestro
