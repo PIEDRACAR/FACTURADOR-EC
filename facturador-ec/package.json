@@ -1,6 +1,6 @@
 {
   "name": "facturador-ec",
-  "version": "0.1.9-v9.9.79",
+  "version": "0.1.9-v9.9.80",
   "description": "Facturador electrónico SRI Ecuador — backend (comprobantes, firma XAdES-BES, inventario, POS)",
   "type": "module",
   "engines": {
